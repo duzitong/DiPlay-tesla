@@ -1,0 +1,11 @@
+{
+  "domain": "carplay.example.com",
+  "listen": "192.168.0.1:9444",
+  "origin": "https://carplay.example.com:9444",
+  "directory": "/data/local/diplay-cert-manager/state",
+  "certificate": "/data/local/diplay-https/fullchain.pem",
+  "privateKey": "/data/local/diplay-https/privkey.pem",
+  "reloadScript": "/data/local/diplay-cert-manager/reload-gateway.sh",
+  "gatewayAddress": "192.168.0.1:9443",
+  "caDirectory": "https://acme-v02.api.letsencrypt.org/directory"
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>DiPlay · 证书管理</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><span class="brand">DiPlay <span class="tag">LOCAL</span></span><span class="dot">手动 DNS 验证</span></header>
+    <section class="intro"><p class="eyebrow">CERTIFICATE MANAGER</p><h1>证书续期，<br>在手机上完成。</h1><p class="muted">V50 负责申请与安装。你只需在 Oray 更新一次 TXT，无需电脑，不保存 DNS 密钥。</p></section>
+    <section id="login-card" class="card">
+      <h2>登录管理页</h2><p class="muted">输入首次部署时保存的管理密码，不是车机配对码或 Oray 密码。</p>
+      <form id="login-form"><label for="password">管理密码</label><input id="password" type="password" autocomplete="current-password" required maxlength="128"><button type="submit">解锁证书管理</button></form>
+      <p class="small muted">密码仅用于当前页面会话，不写入浏览器存储。</p>
+    </section>
+    <div id="dashboard" hidden>
+      <section class="card overview"><div class="row"><h2>当前证书</h2><span id="health" class="tag">读取中</span></div><p id="domain" class="domain"></p><div class="metrics"><div><span class="muted">剩余天数</span><strong id="days">—</strong></div><div><span class="muted">到期时间 · 本地</span><strong id="expiry" class="date">—</strong></div></div><p class="small muted">请在到期前续期。过期后浏览器可能拒绝打开此页，届时需 USB / ADB 恢复。</p><div class="row"><button id="refresh" class="secondary" type="button">刷新状态</button><button id="logout" class="text-button" type="button">退出</button></div></section>
+      <section class="card"><span class="step">01</span><h2>生成本次 TXT</h2><p class="muted">剩余 35 天内可申请。已有未完成申请会继续使用，不重复创建。</p><button id="terms" class="secondary" type="button">查看本次签发条款</button><div id="terms-panel" hidden><p><a id="terms-link" target="_blank" rel="noopener noreferrer">阅读 Let’s Encrypt 当前条款 ↗</a></p><label class="check"><input id="accept" type="checkbox">我已阅读并同意上述证书服务条款</label></div><button id="prepare" type="button" disabled>生成 / 恢复验证记录</button></section>
+      <section class="card"><span class="step">02</span><h2>到 Oray 更新 TXT</h2><p class="muted">仅修改下方挑战记录，别改 carplay 的 A 记录。记录类型选 TXT；若控制台要求前缀，使用下方“主机记录”。</p><p id="order-status" class="small muted">尚未生成申请。</p><div id="records"></div><p id="no-records" class="small muted" hidden>本次授权已有效或验证正在进行，无需添加新的 TXT，可继续检查。</p><a class="external" href="https://console-domain.oray.com/domain-list" target="_blank" rel="noopener noreferrer">打开 Oray 域名管理 ↗</a><p class="small muted">保存后等待 DNS 生效，再回来点击检查。未生效不会提交 CA 验证；可稍后重试。</p><button id="complete" type="button" disabled>检查 DNS 并签发证书</button></section>
+      <section class="card"><span class="step">03</span><h2>确认安装</h2><p class="muted">新证书先保存在 V50，不立即影响当前连接。安装会重启独立 HTTPS 网关，浏览器连接可能短暂中断，不会停止 DiPlay 应用。</p><p id="pending" class="small muted">还没有待安装证书。</p><button id="install" type="button" disabled>安装证书并重启网关</button></section>
+    </div>
+    <aside id="notice" class="notice" role="status" aria-live="polite">连接 V50 热点后使用。此页不提供车机配对码。</aside>
+    <footer>本地管理 · 私钥不离开 V50 · 不改变 CarPlay 配对</footer>
+  </main>
+</body>
+</html>

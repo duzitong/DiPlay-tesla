@@ -26,6 +26,11 @@ Thumbs.db
 /.idea
 
 # Local beta credentials and release signing (never commit)
+.env
+.env.*
+!.env.example
+.test-artifacts/
+.cache/
 .private/
 *.jks
 *.keystore
