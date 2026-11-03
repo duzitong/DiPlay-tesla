@@ -105,8 +105,14 @@ data class AirPlayConfig(
      * restricted the same way, because the iPhone picks one format for both directions.
      */
     val callAtCallRate: Boolean = false,
+    /** Keep main audio with the native source; CarPlay's independent alternate audio remains available. */
+    val externalMainAudio: Boolean = false,
 )
 
 /** The offer, SETUP and controls must all honor the user's audio-output setting. */
 internal val AirPlayConfig.bufferedAudioOutputEnabled: Boolean
-    get() = mainBufferedAudio && !disableAudioOutput
+    get() = mainBufferedAudio && !disableAudioOutput && !externalMainAudio
+
+internal fun AirPlayConfig.acceptsAudioOutput(type: Int, audioType: String?): Boolean =
+    !disableAudioOutput && (!externalMainAudio ||
+        (type == 101 && audioType in listOf(null, "default", "compatibility", "alert")))

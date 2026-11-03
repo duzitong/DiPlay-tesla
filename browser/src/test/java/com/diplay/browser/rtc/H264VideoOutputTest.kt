@@ -20,10 +20,11 @@ class H264VideoOutputTest {
         val clock = AtomicLong()
         val messages = LinkedBlockingQueue<JSONObject>()
         val packets = LinkedBlockingQueue<ByteArray>()
+        val diagnostics = LinkedBlockingQueue<String>()
         val keys = AtomicInteger()
         val stops = AtomicInteger()
         val owner = Any()
-        val output = H264VideoOutput({ keys.incrementAndGet() }, {}, clock::get)
+        val output = H264VideoOutput({ keys.incrementAndGet() }, { diagnostics.offer(it) }, clock::get)
         fun attach(): Long {
             output.attach(owner, { messages.offer(it); true }, { packets.offer(it); true }, { stops.incrementAndGet() })
             return message("video-config").getLong("generation")
@@ -32,7 +33,7 @@ class H264VideoOutputTest {
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
             while (System.nanoTime() < deadline) {
                 val next = messages.poll(2, TimeUnit.SECONDS) ?: break
-                if (next.getString("type") == type) return next
+                if (next.getString("type") == type) return synchronized(output) { next }
             }
             error("Missing $type")
         }
@@ -90,6 +91,43 @@ class H264VideoOutputTest {
             assertEquals("h264-required", error.getString("reason")); assertFalse(error.getBoolean("retryable"))
         }
     }
+    @Test fun unsentExpiryAndOverflowWaitForAnIdrWithoutDisconnectingOrLosingDisplayedState() {
+        for (expire in listOf(false, true)) Fixture().use { f ->
+            f.output.config(CONFIG); val generation = f.attach(); f.ready(generation)
+            repeat(H264VideoOutput.MAX_IN_FLIGHT) { f.frame(it == 0); f.packet() }
+            val requested = f.keys.get()
+            f.frame(false)
+            if (expire) f.clock.set(RtcFrameQueue.MAX_AGE_NS)
+            else repeat(RtcFrameQueue.MAX_FRAMES) { f.frame(false) }
+            f.output.command(f.owner, JSONObject().put("type", "video-ack")
+                .put("generation", generation).put("sequence", H264VideoOutput.MAX_IN_FLIGHT))
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            var recovery: String? = null
+            while (System.nanoTime() < deadline) {
+                val next = f.diagnostics.poll(2, TimeUnit.SECONDS) ?: break
+                if (next.contains("video-queue-recovery")) { recovery = next; break }
+            }
+            assertNotNull("Unsent loss must be reported", recovery)
+            assertEquals(0, f.stops.get())
+            assertTrue(f.output.displayed)
+            f.frame(false)
+            assertNull("A dependent frame must not cross the gap", f.packets.poll(40, TimeUnit.MILLISECONDS))
+            assertTrue(f.keys.get() > requested)
+            f.frame()
+            val resumed = f.packet()
+            assertEquals(H264VideoOutput.MAGIC, resumed.int)
+            assertEquals(1, resumed.int)
+            assertEquals(generation.toDouble(), resumed.double, 0.0)
+            assertEquals((H264VideoOutput.MAX_IN_FLIGHT + 1).toDouble(), resumed.double, 0.0)
+            f.output.command(f.owner, JSONObject().put("type", "video-ack")
+                .put("generation", generation).put("sequence", H264VideoOutput.MAX_IN_FLIGHT + 1))
+            f.clock.addAndGet(H264VideoOutput.TIMEOUT_NS)
+            Thread.sleep(40)
+            assertEquals(0, f.stops.get())
+            assertTrue(f.output.displayed)
+            assertTrue(f.messages.none { it.getString("type") in listOf("video-error", "video-config") })
+        }
+    }
     @Test fun missedInitialKeyframeIsRequestedAgainEvenWhenTheSourceBecomesStill() {
         Fixture().use { f ->
             f.output.config(CONFIG); val generation = f.attach(); f.ready(generation)
@@ -100,6 +138,58 @@ class H264VideoOutputTest {
             val receivedRequests = f.keys.get()
             Thread.sleep(40)
             assertEquals(receivedRequests, f.keys.get())
+        }
+    }
+    @Test fun localQueueRecoveryStillTimesOutWhenAnActiveSourceNeverSendsAnotherKeyframe() {
+        Fixture().use { f ->
+            f.output.config(CONFIG); val generation = f.attach(); f.ready(generation)
+            f.frame(); f.packet()
+            f.output.command(f.owner, JSONObject().put("type", "video-ack")
+                .put("generation", generation).put("sequence", 1))
+            f.frame(false)
+            f.clock.set(RtcFrameQueue.MAX_AGE_NS); f.frame(false)
+            repeat(6) { f.clock.addAndGet(500_000_000); f.frame(false) }
+            assertEquals("video-keyframe-timeout", f.message("video-error").getString("reason"))
+            assertEquals(1, f.stops.get())
+        }
+    }
+    @Test fun repeatedlyQueuedButExpiredKeyframesCannotExtendTheLocalRecoveryDeadline() {
+        Fixture().use { f ->
+            f.output.config(CONFIG); val generation = f.attach(); f.ready(generation)
+            f.frame(); f.packet()
+            f.output.command(f.owner, JSONObject().put("type", "video-ack")
+                .put("generation", generation).put("sequence", 1))
+            synchronized(f.output) {
+                f.frame(false); f.clock.set(RtcFrameQueue.MAX_AGE_NS); f.frame(false)
+                repeat(6) {
+                    f.clock.addAndGet(500_000_000); f.frame()
+                    f.clock.addAndGet(RtcFrameQueue.MAX_AGE_NS); f.frame(false)
+                }
+            }
+            assertEquals("video-keyframe-timeout", f.message("video-error").getString("reason"))
+            assertEquals(1, f.stops.get())
+        }
+    }
+    @Test fun aStillSourceDoesNotSpendQueueRecoveryTimeAndResumesWithoutATransportReset() {
+        Fixture().use { f ->
+            f.output.config(CONFIG); val generation = f.attach(); f.ready(generation)
+            f.frame(); f.packet()
+            f.output.command(f.owner, JSONObject().put("type", "video-ack")
+                .put("generation", generation).put("sequence", 1))
+            f.frame(false)
+            f.clock.set(RtcFrameQueue.MAX_AGE_NS); f.frame(false)
+            f.clock.set(60_000_000_000)
+            Thread.sleep(40)
+            assertEquals(0, f.stops.get())
+            assertTrue(f.output.displayed)
+            f.frame(false)
+            Thread.sleep(40)
+            assertEquals("A resumed source gets a fresh recovery budget", 0, f.stops.get())
+            f.frame()
+            val packet = f.packet()
+            packet.position(8)
+            assertEquals(generation.toDouble(), packet.double, 0.0)
+            assertEquals(2.0, packet.double, 0.0)
         }
     }
     companion object {

@@ -3,7 +3,8 @@ const fields = new Set(('visibility focused renderer transport paused readyState
   'decodedFrames decodedFps presentedFrames presentedFps callbackAgeMs callbackPendingMs submittedFrameAgeMs '+
   'sent received expiredFrames overflowFrames keyframeSkips sendFailures recovering fallbackReason '+
   'enabled contextState engine queuedMs underruns overruns rvfc browser persisted dropped '+
-  'targetMs packets maxArrivalGapMs musicMaxGapMs navigationMaxGapMs musicQueuedMs navigationQueuedMs musicUnderruns navigationUnderruns').split(' '));
+  'targetMs packets maxArrivalGapMs musicMaxGapMs navigationMaxGapMs musicQueuedMs navigationQueuedMs musicUnderruns navigationUnderruns '+
+  'musicVolume navigationVolume musicGain navigationGain').split(' '));
 
 export function diagnosticFields(data) {
   return Object.fromEntries(Object.entries(data).filter(([key,value])=>fields.has(key) &&

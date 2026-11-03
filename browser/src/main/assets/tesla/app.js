@@ -20,7 +20,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     hevcUnsupported:['此浏览器无法接收 HEVC WebRTC。请在 Android 的高级设置关闭 HEVC，并重新连接 CarPlay。','This browser cannot receive HEVC over WebRTC. Turn off HEVC in Android Advanced settings and reconnect CarPlay.'],
     jpegHevcUnsupported:['JPEG 排障模式只支持 H.264。请先关闭 Android 的 HEVC，再重新连接 CarPlay。','JPEG diagnostics require H.264. Turn off HEVC on Android, then reconnect CarPlay.'],
     browserSurface:['Tesla 浏览器','Tesla browser'],sound:['声音','Sound'],advancedAudio:['高级音频','Advanced audio'],
-    audioScope:['浏览器音量进一步调低主机输出，不会自动压低音乐；旧版主机未标记的声音保持原音量。','Browser volume further lowers host output without automatic music ducking. Untagged audio from older hosts keeps its original level.'],
+    audioScope:['浏览器独立调节音乐与导航，不会自动压低音乐；旧版主机未标记的声音保持原音量。','Browser volume adjusts music and guidance independently without automatic music ducking. Untagged audio from older hosts keeps its original level.'],
     hostNavigationVolume:['主机导航音量','Host navigation volume'], navigationDown:['降低导航音量','Lower navigation volume'],navigationUp:['提高导航音量','Raise navigation volume'],
     navigationHint:['只降低导航提示音，音乐音量不变。0 dB 为原始音量。立即生效，并与 Android 设置同步。','Lowers guidance only; music stays unchanged. 0 dB is the original level. Applies immediately and shares the Android setting.'],
     navigationLoading:['连接后读取已保存音量','Read saved level when connected'],navigationSaving:['正在保存…','Saving…'],navigationSaved:['已保存 · 立即生效','Saved · Applies immediately'],
@@ -52,11 +52,20 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     settings:['显示设置','Display settings'], expand:['全屏','Fullscreen'], theme:['日夜','Day / night'],
     pair:['连接你的主机','Connect your host'], pairHint:['在 Android 主机首页查看 6 位连接码，5 分钟内有效。配对后，此浏览器会记住主机。','Find the six-digit code on the Android host home screen. It is valid for five minutes. This browser remembers the host after pairing.'],
     code:['6 位配对码','6-digit pairing code'], connect:['连接','Connect'], home:['主页','Home'], back:['返回','Back'], previous:['上一曲','Previous'], play:['播放 / 暂停','Play / pause'], next:['下一曲','Next'],
-    audio:['网页音频用于音乐与导航；通话、Siri 语音和麦克风目前由 Android 主机处理。','Browser audio plays music and navigation; calls, Siri voice and the microphone currently use the Android host.'],
+    resume:['播放','Play'],pause:['暂停','Pause'],
+    navigationVolumeDown:['导航 −','Guidance −'],navigationVolumeUp:['导航 ＋','Guidance +'],
+    navigationVolumeChanged:['网页导航音量：{value}%。音乐和蓝牙音量不变。','Browser guidance volume: {value}%. Music and Bluetooth volume are unchanged.'],
+    navigationClippingWarning:['超过 100% 可能削波失真。','Above 100% may clip and distort.'],
+    commandSubmitting:['正在提交：{action}…','Submitting: {action}…'],
+    commandSubmitted:['已提交：{action}。尚未确认 iPhone 执行。','Submitted: {action}. iPhone execution is not confirmed.'],
+    commandFailed:['指令失败：{error}','Command failed: {error}'],
+    audio:['在 Android 高级设置开启“通过车辆蓝牙播放 CarPlay 音频”后，音乐、导航、Siri 和通话全部由 iPhone 直接输出，网页只显示画面和接收触控；修改会重新连接 CarPlay。请将 iPhone 与车机配对，并在手机选择车机蓝牙音源；DiPlay 不转发蓝牙。关闭此项后可恢复网页音频。','Enable CarPlay audio over the car’s Bluetooth in Android Advanced settings for music, navigation, Siri and calls directly from the iPhone. This page provides video and touch only. Changing it reconnects CarPlay. Pair the iPhone with the car and select the car’s Bluetooth output on the phone; DiPlay does not relay Bluetooth. Turn it off to restore browser audio.'],
+    bluetoothAudio:['iPhone 蓝牙音频','iPhone Bluetooth audio'],
+    bluetoothAudioHint:['全部声音由 iPhone 直接输出，请在手机选择车机蓝牙音源。关闭网页不会中断这条音频路径。网页音量、缓冲和主机导航音量不控制蓝牙声音。','All sound comes directly from the iPhone. Select the car’s Bluetooth output on the phone. Closing this page does not stop that audio path. Browser volume, buffering and host guidance level do not control Bluetooth sound.'],
     browserAudio:['浏览器音频（实验性）','Browser audio (experimental)'], audioOn:['浏览器音频已开启（实验性）','Browser audio enabled (experimental)'],audioPending:['浏览器音频 · 点按启动（实验性）','Browser audio · Tap to start (experimental)'],
     buffer:['音频缓冲','Audio buffer'], transport:['视频传输','Video transport'], auto:['WebRTC（不自动回退 JPEG）','WebRTC (no automatic JPEG fallback)'],
     musicVolume:['音乐音量','Music volume'],navigationVolume:['导航音量','Navigation volume'],
-    volumeHint:['立即生效，并在此浏览器保存。100% 保留原音量，0% 静音。','Applies immediately and saves in this browser. 100% keeps the original level; 0% mutes.'],
+    volumeHint:['立即生效，并在此浏览器保存。导航可调 0–300%：100% 为原始音量，300% 为原始导航振幅的 3 倍（约 +9.5 dB），0% 静音，无额外基础增益。高增益可能失真，请从 100% 逐步调高。音乐和蓝牙音量不变。','Applies immediately and saves in this browser. Guidance ranges from 0–300%: 100% is the original level, 300% is 3× the original signal amplitude (about +9.5 dB), and 0% mutes. There is no extra base gain. High gain can distort; increase gradually from 100%. Music and Bluetooth volume are unchanged.'],
     webcodecs:['H.264 / WebCodecs（实验性）','H.264 / WebCodecs (experimental)'],
     webcodecsHint:['WebCodecs 需要受信任的 HTTPS 和浏览器 H.264 解码支持；失败时请手动切回其他传输。只重建浏览器媒体连接，不重连 iPhone。','WebCodecs requires trusted HTTPS and browser H.264 decoding. Switch transport manually if it fails. Restarts browser media only, not the iPhone connection.'],
     webcodecsWaiting:['正在等待 WebCodecs 视频。','Waiting for WebCodecs video.'],
@@ -89,7 +98,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     jpegHevcUnsupported:'يتطلب وضع تشخيص JPEG فيديو H.264. عطّل HEVC على Android ثم أعد اتصال CarPlay.',
     jpegDiagnostics:'JPEG (تشخيص يدوي)',
     browserSurface:'متصفح Tesla',sound:'الصوت',advancedAudio:'إعدادات الصوت المتقدمة',
-    audioScope:'يخفض مستوى صوت المتصفح خرج المضيف دون خفض الموسيقى تلقائيًا. يحتفظ الصوت غير المصنّف من المضيف القديم بمستواه الأصلي.',
+    audioScope:'يضبط المتصفح الموسيقى وإرشادات الملاحة بشكل مستقل دون خفض الموسيقى تلقائيًا. يحتفظ الصوت غير المصنّف من المضيف القديم بمستواه الأصلي.',
     webcodecs:'H.264 / WebCodecs (تجريبي)',webcodecsHint:'يتطلب WebCodecs اتصال HTTPS موثوقًا ودعم فك ترميز H.264. غيّر النقل يدويًا عند الفشل. يُعاد اتصال وسائط المتصفح فقط، دون إعادة اتصال iPhone.',webcodecsWaiting:'بانتظار فيديو WebCodecs.',webcodecsFailed:'فيديو WebCodecs غير متاح؛ غيّر نقل الفيديو يدويًا.',
     hostNavigationVolume:'مستوى صوت الملاحة على المضيف',navigationDown:'خفض صوت الملاحة',navigationUp:'رفع صوت الملاحة',navigationHint:'يخفض إرشادات الملاحة فقط دون تغيير الموسيقى. \u20660 dB\u2069 هو المستوى الأصلي. يُطبّق فورًا ويستخدم إعداد Android نفسه.',
     navigationLoading:'ستُقرأ القيمة المحفوظة بعد الاتصال',navigationSaving:'جارٍ الحفظ…',navigationSaved:'تم الحفظ · يُطبّق فورًا',navigationConflict:'تغيّر المستوى في مكان آخر. تظهر أحدث قيمة؛ اضبطه مجددًا.',navigationFailed:'لم يُؤكّد الحفظ؛ تجري قراءة المستوى مجددًا.',navigationRecovered:'قُرئ المستوى الحالي؛ يمكنك ضبطه مجددًا.',
@@ -101,7 +110,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     presentationError:'خطأ أخذ عينة العرض',videoYes:'نعم',videoNo:'لا',presentationNote:'نطاق قياس العرض',presentationScope:'يشير الاستدعاء إلى إرسال الإطار إلى المركّب، وليس إلى تغيّر بكسلات الشاشة.',
     videoStreamActive:'تدفق الفيديو نشط',
     submittedFrameAge:'عمر الإطار المرسل إلى المركّب',
-    musicVolume:'مستوى صوت الموسيقى',navigationVolume:'مستوى صوت الملاحة',volumeHint:'يُطبّق فورًا ويُحفظ في هذا المتصفح. 100% للمستوى الأصلي و0% للكتم.',
+    musicVolume:'مستوى صوت الموسيقى',navigationVolume:'مستوى صوت الملاحة',volumeHint:'يُطبّق فورًا ويُحفظ في هذا المتصفح. نطاق الملاحة 0–300%: يعطي 100% المستوى الأصلي، و300% ثلاثة أضعاف سعة الإشارة الأصلية (نحو +9.5 dB)، و0% للكتم، دون تضخيم أساسي إضافي. قد يسبب التضخيم العالي تشوّهًا؛ ارفع المستوى تدريجيًا من 100%. لا يتغير صوت الموسيقى أو Bluetooth.',
     renderer:'طريقة عرض WebRTC',nativeRenderer:'الفيديو الأصلي (افتراضي)',canvasRenderer:'Canvas (تجريبي)',rendererHint:'قد يساعد Canvas في مشاكل عرض الفيديو في المتصفح ويزيد عمل الرسم. يُطبّق عند الحفظ دون إعادة اتصال CarPlay.',rendererFailed:'تعذّر الرسم على Canvas؛ استُعيد الفيديو الأصلي.',
     recovery:'مهلة استعادة WebRTC',quickRecovery:'4 ثوانٍ · إعادة محاولة سريعة',balancedRecovery:'10 ثوانٍ · متوازن (افتراضي)',patientRecovery:'30 ثانية · انتظار الاستعادة',recoveryHint:'تُحفظ الصورة الأخيرة أثناء الانقطاع القصير، ثم يعاد اتصال WebRTC دون الانتقال إلى JPEG. يعيد الحفظ اتصال وسائط المتصفح فقط دون إعادة اتصال iPhone.',jpegLimit:'يتوفر 60 إطارًا في الثانية لـ WebRTC؛ تحويل JPEG محدود بـ 30 إطارًا. يسري معدل الإطارات المحفوظ عند اتصال CarPlay التالي.',
     recovering:'تجري استعادة الفيديو',videoQueue:'قائمة انتظار الفيديو المضغوط',queueBudget:'مهلة انتظار الفيديو',expiredFrames:'الإطارات المنتهية',overflowFrames:'الإطارات المتجاوزة للسعة',keyframeSkips:'الإطارات المتخطاة حتى الإطار الرئيسي',sendFailures:'إخفاقات الإرسال المحلي',fallbackReason:'سبب الانتقال إلى JPEG',
@@ -115,7 +124,15 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     audioOverruns:'مرات استعادة تراكم الصوت',audioArrivalGap:'أطول فترة بين حزم الصوت',
     musicArrivalGap:'أطول فترة بين حزم الموسيقى',
     settings:'إعدادات العرض',expand:'ملء الشاشة',theme:'نهار / ليل',pair:'اتصال بالمضيف',pairHint:'اعرض رمز الاتصال المكوّن من ستة أرقام على الصفحة الرئيسية لجهاز Android المضيف. صالح لخمس دقائق. يتذكر المتصفح المضيف بعد الاقتران.',code:'رمز الاقتران من 6 أرقام',connect:'اتصال',home:'الرئيسية',back:'رجوع',previous:'السابق',play:'تشغيل / إيقاف مؤقت',next:'التالي',
-    audio:'يشغّل المتصفح الموسيقى وإرشادات الملاحة؛ تستخدم المكالمات وصوت Siri والميكروفون جهاز Android المضيف حاليًا.',browserAudio:'صوت المتصفح (تجريبي)',audioOn:'صوت المتصفح مفعّل (تجريبي)',audioPending:'صوت المتصفح · اضغط للتشغيل (تجريبي)',buffer:'تخزين الصوت مؤقتًا',transport:'نقل الفيديو',auto:'WebRTC (دون انتقال تلقائي إلى JPEG)',audioBlocked:'اضغط مجددًا للسماح بالصوت؛ استُعيد صوت Android.',
+    resume:'تشغيل',pause:'إيقاف مؤقت',commandSubmitting:'جارٍ إرسال: {action}…',
+    navigationVolumeDown:'الملاحة −',navigationVolumeUp:'الملاحة +',
+    navigationVolumeChanged:'مستوى صوت الملاحة في المتصفح: {value}%. لا يتغير صوت الموسيقى أو Bluetooth.',
+    navigationClippingWarning:'قد يتسبب تجاوز 100% في قصّ الصوت وتشويهه.',
+    commandSubmitted:'تم إرسال: {action}. لم يتم تأكيد التنفيذ على iPhone.',
+    commandFailed:'فشل الأمر: {error}',
+    audio:'فعّل صوت CarPlay عبر بلوتوث السيارة في إعدادات Android المتقدمة لتشغيل الموسيقى والملاحة وSiri والمكالمات مباشرة من iPhone. تعرض الصفحة الفيديو وتستقبل اللمس فقط. يعيد التغيير اتصال CarPlay. أقرن iPhone بالسيارة واختر مخرج Bluetooth الخاص بها على الهاتف؛ لا يعيد DiPlay إرسال الصوت عبر Bluetooth. عطّل الخيار لاستعادة صوت المتصفح.',
+    bluetoothAudio:'صوت Bluetooth من iPhone',bluetoothAudioHint:'يصدر كل الصوت مباشرة من iPhone. اختر مخرج Bluetooth الخاص بالسيارة على الهاتف. لا يؤدي إغلاق الصفحة إلى إيقاف هذا المسار الصوتي. لا تتحكم إعدادات صوت المتصفح أو التخزين المؤقت أو مستوى الملاحة على المضيف في صوت Bluetooth.',
+    browserAudio:'صوت المتصفح (تجريبي)',audioOn:'صوت المتصفح مفعّل (تجريبي)',audioPending:'صوت المتصفح · اضغط للتشغيل (تجريبي)',buffer:'تخزين الصوت مؤقتًا',transport:'نقل الفيديو',auto:'WebRTC (دون انتقال تلقائي إلى JPEG)',audioBlocked:'اضغط مجددًا للسماح بالصوت؛ استُعيد صوت Android.',
     displayHint:'تُحفظ أبعاد النافذة اليمنى والكاملة بشكل مستقل للاتصال التالي.',transportHint:'يتغير نقل الفيديو فورًا بعد الحفظ.',mode:'إعداد النافذة',right:'النافذة اليمنى',full:'ملء الشاشة',rightWidth:'عرض النافذة اليمنى',rightHeight:'ارتفاع النافذة اليمنى',fullWidth:'عرض ملء الشاشة',fullHeight:'ارتفاع ملء الشاشة',fps:'معدل الإطارات (\u20665–60\u2069)',quality:'جودة JPEG (40–95)',cancel:'إلغاء',save:'حفظ للاتصال التالي',pending:'تسري الإعدادات الجديدة عند الاتصال التالي',reconnect:'تطبيق وإعادة الاتصال',confirm:'تطبيق الإعدادات المحفوظة وإعادة اتصال CarPlay الآن؟',waiting:'بانتظار CarPlay',disconnected:'انقطع الاتصال؛ تجري إعادة المحاولة…',invalid:'تحقق من رمز الاقتران والأبعاد واتصال الشبكة.',unavailable:'ملء الشاشة غير متاح؛ استخدم عناصر التحكم في Tesla.'
   };
   const t = key => ar?arabic[key]:copy[key][zh ? 0 : 1];
@@ -166,6 +183,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
   $('keysButton').addEventListener('click',()=>{ showKeys($('virtualKeys').hidden); closeMenu(); });
   $('hideKeys').addEventListener('click',()=>{ showKeys(false); $('menuButton').focus(); });
   let hevcErrorAnnounced=false;
+  let audioPolicyKnown=false, bluetoothAudio=false;
   const media = createMedia({video,canvas,getToken:()=>token,onDiagnostic:diagnostics.record,
     onTransport:mode=>{
       if(mode===videoTransport && mode==='webcodecs')return;
@@ -179,15 +197,39 @@ import {createClientDiagnostics} from './client-diagnostics.js';
         hevcErrorAnnounced=true;openMenu();
       }
     },
-    onAudio:state=>{const button=$('audioButton'),label=t(state.enabled?'audioOn':media.audioPreference.wanted?'audioPending':'browserAudio');if(button.textContent!==label)button.textContent=label;button.setAttribute('aria-pressed',String(state.enabled));}
+    onAudio:()=>refreshAudioControls()
   });
+  function refreshAudioControls() {
+    const available=audioPolicyKnown && !bluetoothAudio, button=$('audioButton');
+    const label=t(bluetoothAudio?'bluetoothAudio':media.audio.enabled?'audioOn':media.audioPreference.wanted?'audioPending':'browserAudio');
+    if(button.textContent!==label)button.textContent=label;
+    button.disabled=!available;
+    button.setAttribute('aria-pressed',String(media.audio.enabled));
+    for(const id of ['musicVolume','navigationVolume','audioBuffer','navigationVolumeDown','navigationVolumeUp'])$(id).disabled=!available;
+    $('volumeHint').textContent=t(bluetoothAudio?'bluetoothAudioHint':'volumeHint');
+  }
+  media.setAudioAvailable(false);
+  refreshAudioControls();
   $('audioBuffer').value=localStorage.getItem('diplay-audio-buffer')||'200';
   media.audio.setBuffer(Number($('audioBuffer').value));
-  for (const role of ['music','navigation']) {
+  function showAudioVolume(role,percent) {
     const slider = $(role+'Volume'), output = $(role+'VolumeValue');
-    const show = percent => { slider.value=String(percent); output.value=percent+'%'; slider.setAttribute('aria-valuetext',percent+'%'); };
-    show(media.audio.volumes[role]);
-    slider.addEventListener('input',()=>show(media.setAudioVolume(role,slider.value)));
+    slider.value=String(percent);output.value=percent+'%';slider.setAttribute('aria-valuetext',percent+'%');
+  }
+  for (const role of ['music','navigation']) {
+    showAudioVolume(role,media.audio.volumes[role]);
+    $(role+'Volume').addEventListener('input',()=>showAudioVolume(role,media.setAudioVolume(role,$(role+'Volume').value)));
+  }
+  for(const [id,delta] of [['navigationVolumeDown',-10],['navigationVolumeUp',10]]) {
+    $(id).addEventListener('click',()=>{
+      if(!audioPolicyKnown || bluetoothAudio)return;
+      const percent=media.setAudioVolume('navigation',media.audio.volumes.navigation+delta);
+      showAudioVolume('navigation',percent);
+      const feedback=$('mediaCommandStatus');
+      feedback.hidden=false;
+      feedback.textContent=t('navigationVolumeChanged').replace('{value}',String(percent))+
+        (percent>100?' '+t('navigationClippingWarning'):'');
+    });
   }
   $('audioButton').addEventListener('click',async()=>{
     const enabled=await media.audioPreference.toggle();
@@ -197,7 +239,13 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     if(event.isTrusted && !(event.target instanceof Element && event.target.closest('#audioButton')))media.audioPreference.start();
   };
   document.addEventListener('pointerup',startPreferredAudio,true);
-  document.addEventListener('keydown',event=>{if(!event.repeat)startPreferredAudio(event);},true);
+  const carControlKeys=new Set(['MediaPlayPause','MediaPlay','MediaPause','MediaTrackNext','MediaTrackPrevious',
+    'ArrowLeft','ArrowRight','ArrowUp','ArrowDown']);
+  document.addEventListener('keydown',event=>{
+    if(event.repeat)return;
+    if(event.isTrusted && carControlKeys.has(event.key))diagnostics.record('car-control-key',{reason:event.key});
+    startPreferredAudio(event);
+  },true);
   $('audioBuffer').addEventListener('change',()=>{localStorage.setItem('diplay-audio-buffer',$('audioBuffer').value);media.audio.setBuffer(Number($('audioBuffer').value));});
   const navigationVolume=createNavigationVolume({
     save:async body=>{
@@ -215,7 +263,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
       $('navigationValue').textContent=state.value===null?'—':`${state.value} dB`;
       level.setAttribute('aria-valuetext',state.value===null?t('unknown'):`${state.value} dB`);
       const key=state.busy?'navigationSaving':state.issue==='conflict'?'navigationConflict':state.issue==='failed'?(state.ready?'navigationRecovered':'navigationFailed'):state.ready?'navigationSaved':'navigationLoading';
-      $('navigationState').textContent=t(key);
+      $('navigationState').textContent=t(bluetoothAudio?'bluetoothAudio':key);
       $('navigationState').dataset.issue=String(state.issue==='conflict' || state.issue==='failed' && !state.ready);
     }
   });
@@ -284,10 +332,14 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     if(request<appliedStatus)return current;
     if(!statusAvailable || current?.connected!==state.connected)diagnostics.record('status-connection',{connected:Boolean(state.connected)});
     appliedStatus=request;current = state;statusAvailable=true;
-    navigationVolume.observe(state.navigationAttenuationDb,readEpoch);
+    audioPolicyKnown=true;bluetoothAudio=state.audio==='bluetooth';
+    media.setAudioAvailable(!bluetoothAudio);
+    refreshAudioControls();
+    if(bluetoothAudio)navigationVolume.unavailable();
+    else navigationVolume.observe(state.navigationAttenuationDb,readEpoch);
     $('status').textContent = state.error || rendererNotice || (videoMetrics.recovering ? t('recovering') : null) || state.stage || (state.connected ? 'CarPlay' : t('waiting'));
     $('pending').hidden = !state.pendingReconnect || !$('reconnectPanel').hidden;
-    document.querySelectorAll('[data-action]').forEach(button => { button.disabled = !state.connected; });
+    refreshActionControls();
     if (!state.connected) resetPicture('status-disconnected');
     updateDiagnostics(state);
     return state;
@@ -313,7 +365,8 @@ import {createClientDiagnostics} from './client-diagnostics.js';
       maxArrivalGapMs:audio.maxArrivalGapMs??null,musicMaxGapMs:audio.musicMaxGapMs??null,
       navigationMaxGapMs:audio.navigationMaxGapMs??null,musicQueuedMs:audio.musicQueuedMs??null,
       navigationQueuedMs:audio.navigationQueuedMs??null,musicUnderruns:audio.musicUnderruns,
-      navigationUnderruns:audio.navigationUnderruns});
+      navigationUnderruns:audio.navigationUnderruns,musicVolume:audio.musicVolume,navigationVolume:audio.navigationVolume,
+      musicGain:audio.musicGain,navigationGain:audio.navigationGain});
     const connected=Boolean(statusAvailable && state.connected && token && !document.hidden);
     const jpegSelected=!media.busy && media.mode==='jpeg' && state.videoCodec!=='H265';
     const fps=connected?(media.displayed?(web?videoMetrics.presentedFps:videoMetrics.decodedFps):jpegSelected?jpeg.fps:null):null;
@@ -499,9 +552,23 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     video.addEventListener(name,()=>diagnostics.record('video-'+name));
   window.addEventListener('error',event=>diagnostics.record('script-error',{errorName:event.error?.name||'Error'}));
   window.addEventListener('unhandledrejection',event=>diagnostics.record('script-rejection',{errorName:event.reason?.name||'Error'}));
-  document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click',() => {
-    releaseTouches(); api('/api/action',{action:button.dataset.action}).catch(error => { $('status').textContent = error.message; });
+  let actionPending=false;
+  function refreshActionControls() {
+    document.querySelectorAll('[data-action]').forEach(button => { button.disabled = !current?.connected || actionPending; });
+  }
+  document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click',async() => {
+    if(actionPending)return;
+    actionPending=true;refreshActionControls();releaseTouches();
+    const feedback=$('mediaCommandStatus');
+    feedback.hidden=false;feedback.textContent=t('commandSubmitting').replace('{action}',button.textContent);
+    try {
+      await api('/api/action',{action:button.dataset.action});
+      feedback.textContent=t('commandSubmitted').replace('{action}',button.textContent);
+    } catch(error) {
+      feedback.textContent=t('commandFailed').replace('{error}',error.message);
+    } finally { actionPending=false;refreshActionControls(); }
   }));
+  refreshActionControls();
   async function pair(code) {
     if (!/^[0-9]{6}$/.test(code)) { $('pairError').textContent=t('invalid'); return; }
     const button=$('pairing').querySelector('button[type="submit"]');

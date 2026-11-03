@@ -1,1 +1,3 @@
-<resources><string name="app_name">DiPlay Tesla</string></resources>
+<resources>
+    <string name="app_name" translatable="false">DiPlay Tesla</string>
+</resources>

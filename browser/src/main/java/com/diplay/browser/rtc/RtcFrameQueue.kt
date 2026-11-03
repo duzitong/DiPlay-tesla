@@ -63,8 +63,9 @@ internal class RtcFrameQueue {
      */
     fun takeSendFailure(): Long? = pendingSendFailureSince.also { pendingSendFailureSince = null }
 
-    fun recovering(now: Long) = needsKey && waitingSince != null &&
-        lastOffered?.let { now - it < SOURCE_QUIET_NS } == true
+    fun sourceActive(now: Long) = lastOffered?.let { now - it < SOURCE_QUIET_NS } == true
+
+    fun recovering(now: Long) = needsKey && waitingSince != null && sourceActive(now)
 
     fun recoveryExpired(now: Long, graceNanos: Long) = recovering(now) &&
         waitingSince?.let { now - it >= graceNanos } == true

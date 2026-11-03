@@ -8,6 +8,7 @@ import com.shilapi.xcertplay.AppLocale
 import com.shilapi.xcertplay.NavigationAudioSettings
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
+import com.shilapi.xcertplay.airplay.AirPlayInfoPlist
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -52,6 +53,10 @@ class TeslaBrowserOutputTest {
         assertNull(actual.main.viewAreas)
         assertTrue(actual.microphone)
         assertTrue(actual.mainBufferedAudio)
+        assertTrue(actual.externalMainAudio)
+        val audio = AirPlayInfoPlist.build(actual)
+        assertEquals(9, (audio["audioFormats"] as List<*>).size)
+        assertFalse(audio.containsKey("mainBufferedInfo"))
         assertEquals(config.deviceId,actual.deviceId)
         assertEquals(selected,TeslaBrowserOutput(context).status().getJSONObject("display").let(com.diplay.browser.BrowserDisplayJson::decode))
     }
@@ -64,6 +69,26 @@ class TeslaBrowserOutputTest {
         assertTrue(state.getBoolean("pendingReconnect"))
         assertEquals("RIGHT",state.getJSONObject("activeDisplay").getString("mode"))
         assertEquals("FULL",state.getJSONObject("display").getString("mode"))
+    }
+    @Test fun optedInCarBluetoothOffersNoCarPlayAudioAndReportsTheAppliedProfile() {
+        com.shilapi.xcertplay.AirPlayPersistence.saveCarBluetoothAudio(context, true)
+        val output = TeslaBrowserOutput(context)
+        assertEquals("bluetooth", output.status().getString("audio"))
+        val config = AirPlayConfig("DiPlay", "device", "bt", "version", AirPlayDisplayConfig(640, 480),
+            disableAudioOutput = true, microphone = true, mainBufferedAudio = true)
+        val actual = output.configure(config)
+        assertTrue(actual.disableAudioOutput)
+        assertFalse(actual.microphone)
+        val info = AirPlayInfoPlist.build(actual)
+        assertFalse(info.containsKey("audioFormats"))
+        assertFalse(info.containsKey("audioLatencies"))
+        assertFalse(info.containsKey("mainBufferedInfo"))
+        assertEquals("bluetooth", output.status().getString("audio"))
+        val restored = output.configure(config.copy(disableAudioOutput = false))
+        assertTrue(restored.microphone)
+        assertTrue(restored.mainBufferedAudio)
+        assertTrue(AirPlayInfoPlist.build(restored).containsKey("audioFormats"))
+        assertEquals("android", output.status().getString("audio"))
     }
     @Test fun browserNavigationLevelUsesTheHostSettingAndSurvivesOutputRecreation() {
         NavigationAudioSettings.save(context, -8)

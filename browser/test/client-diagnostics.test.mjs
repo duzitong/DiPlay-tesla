@@ -25,6 +25,10 @@ test('samples use the existing tick at most every five seconds and omit private/
   assert.deepEqual(diagnosticFields({reason:'page-hidden',errorName:'TypeError',url:'https://private',
     token:'private',message:'private',httpStatus:503,decodedFps:NaN,request:'https://private'}),
   {reason:'page-hidden',errorName:'TypeError',httpStatus:503});
+  const audio={navigationVolume:33,navigationGain:.99,musicVolume:100,musicGain:1};
+  await f.diagnostics.sample({},audio);
+  f.diagnostics.record('audio-sample',audio);await f.diagnostics.flush(true);await settle();
+  assert.deepEqual(f.batches.at(-1).body.events.at(-1).data,{visibility:'visible',focused:true,...audio});
 });
 
 test('failed uploads retain ordered events within a fixed bound and report dropped events on recovery',async()=>{

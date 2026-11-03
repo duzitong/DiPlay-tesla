@@ -22,7 +22,9 @@ object AirPlayInfoPlist {
     private const val RESOURCE_AUDIO = 2
     private const val TRANSFER_TAKE = 1
     private const val PRIORITY_NICE_TO_HAVE = 100
+    private const val PRIORITY_USER_INITIATED = 500
     private const val CONSTRAINT_ANYTIME = 100
+    private const val CONSTRAINT_NEVER = 1000
 
     /** Discovery and /info must describe the same receiver capabilities. */
     fun features(config: AirPlayConfig): Long =
@@ -46,11 +48,12 @@ object AirPlayInfoPlist {
             "rightHandDrive" to config.rightHandDrive,
             "keepAliveLowPower" to false,
             "keepAliveSendStatsAsBody" to false,
-            "modes" to modes(),
+            "modes" to modes(config),
         )
         if (!config.disableAudioOutput) {
             info["audioLatencies"] = audioLatencies()
-            info["audioFormats"] = audioFormats(config.entertainmentSampleRate, config.microphone, config.mainBufferedAudio, config.microphoneOpus,
+            // Removing main formats also removes alternate audio on iOS. Reserve the resource instead.
+            info["audioFormats"] = audioFormats(config.entertainmentSampleRate, config.microphone, config.bufferedAudioOutputEnabled, config.microphoneOpus,
                 config.speechWithout8And16Khz, config.callAtCallRate)
         }
         info["extendedFeatures"] = listOf("vocoderInfo", "enhancedRequestCarUI")
@@ -84,17 +87,17 @@ object AirPlayInfoPlist {
         return info
     }
 
-    private fun resource(resourceId: Int): Map<String, Any?> = linkedMapOf(
+    private fun resource(resourceId: Int, external: Boolean = false): Map<String, Any?> = linkedMapOf(
         "resourceID" to resourceId,
         "transferType" to TRANSFER_TAKE,
-        "transferPriority" to PRIORITY_NICE_TO_HAVE,
-        "takeConstraint" to CONSTRAINT_ANYTIME,
-        "borrowConstraint" to CONSTRAINT_ANYTIME,
+        "transferPriority" to if (external) PRIORITY_USER_INITIATED else PRIORITY_NICE_TO_HAVE,
+        "takeConstraint" to if (external) CONSTRAINT_NEVER else CONSTRAINT_ANYTIME,
+        "borrowConstraint" to if (external) CONSTRAINT_NEVER else CONSTRAINT_ANYTIME,
         "unborrowConstraint" to CONSTRAINT_ANYTIME,
     )
 
-    private fun modes(): Map<String, Any?> = linkedMapOf(
-        "resources" to listOf(resource(RESOURCE_SCREEN), resource(RESOURCE_AUDIO)),
+    private fun modes(config: AirPlayConfig): Map<String, Any?> = linkedMapOf(
+        "resources" to listOf(resource(RESOURCE_SCREEN), resource(RESOURCE_AUDIO, config.externalMainAudio)),
         "appStates" to listOf(
             linkedMapOf("appStateID" to 2, "state" to false),
             linkedMapOf("appStateID" to 1, "speechMode" to -1),

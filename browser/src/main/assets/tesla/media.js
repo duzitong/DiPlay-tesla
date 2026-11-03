@@ -46,7 +46,7 @@ export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()
   const videoMode=value=>['jpeg','webcodecs'].includes(value)?value:'auto';
   let selectedMode = videoMode(read('diplay-video'));
   let socket = null, session = null, generation = 0, lastOfferId = -1, displayed = false;
-  let connecting = false, disposed = false, retry = null, stats = {};
+  let connecting = false, welcomed = false, disposed = false, retry = null, stats = {};
   const now = () => performance.now();
   const socketCurrent = (ws,ticket) => !disposed && socket === ws && generation === ticket;
   const current = state => state !== null && session === state && socketCurrent(state.socket,state.generation);
@@ -299,9 +299,10 @@ export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()
       try { data = JSON.parse(event.data); } catch (_) { return; }
       if (!data || typeof data !== 'object') return;
       if (data.type === 'media-busy') {
+        welcomed = false;
         if (!busy) { onDiagnostic('media-busy');busy = true; audio.disable('media-busy'); stopRtc('media-busy'); onTransport('waiting'); }
       } else if (data.type === 'welcome') {
-        busy = false; publishStats({fallbackReason:null}); audioPreference.start();
+        welcomed = true; busy = false; publishStats({fallbackReason:null}); audioPreference.start();
         if(selectedMode==='webcodecs') {
           if(typeof data.videoSession==='string')webcodecs.start(getToken(),data.videoSession);
           else publishStats({webcodecsError:'video-owner-unavailable'});
@@ -328,14 +329,14 @@ export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()
     ws.onclose = () => {
       if (!socketCurrent(ws,ticket)) return;
       onDiagnostic('socket-close');
-      clearSocketHandlers(ws); socket = null; connecting = false;
+      clearSocketHandlers(ws); socket = null; connecting = false; welcomed = false;
       webcodecs.close();audio.disable('socket-close');audio.setTransport(null); stopRtc(null,true,'socket-close'); scheduleRetry(ticket);
     };
     ws.onerror = event => { if (socketCurrent(ws,ticket)) {onDiagnostic('socket-error',{reason:event?.reason});ws.close();} };
   }
   function close(reason='client-close') {
     onDiagnostic('media-close',{reason,hadSocket:Boolean(socket)});
-    busy = false;
+    busy = false; welcomed = false;
     generation++; clearTimeout(retry); retry = null; connecting = false;
     const old = socket; socket = null;
     if (old) { clearSocketHandlers(old); old.close(); }
@@ -350,6 +351,11 @@ export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()
     close('video-configuration'); open();
   }
   return {open,close,audio,audioPreference,configureVideo,
+    setAudioAvailable(available) {
+      const previous=audioPreference.available;
+      audioPreference.setAvailable(available);
+      if(!previous && available && welcomed && !document.hidden)audioPreference.start();
+    },
     get mode() { return selectedMode; },
     get busy() { return busy; },
     setAudioVolume(role,value) {

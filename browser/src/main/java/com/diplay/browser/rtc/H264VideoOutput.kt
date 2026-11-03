@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-/** Dedicated nonblocking video writer; a lost reference always starts a new decode generation. */
+/** Dedicated bounded video writer; unsent gaps resume only at a fresh keyframe. */
 internal class H264VideoOutput(
     private val requestKey: () -> Unit,
     private val diagnostic: (String) -> Unit,
@@ -36,6 +36,9 @@ internal class H264VideoOutput(
     private var ready = false
     private var configuringAt: Long? = null
     private var reportedAt = 0L
+    private var queueLossReported = false
+    private var queueRecoveryAt: Long? = null
+    private var queueRecoveryAfterSequence = 0L
     private var closed = false
     @Volatile var displayed = false; private set
     init { worker.scheduleAtFixedRate(::tick, 10, 10, TimeUnit.MILLISECONDS) }
@@ -66,6 +69,9 @@ internal class H264VideoOutput(
         ready = false; displayed = false; queue.reset(); pending.clear()
         sequence = 0; acknowledged = 0; origin = null; timestamp = -1
         reportedAt = clock()
+        queueLossReported = false
+        queueRecoveryAt = null
+        queueRecoveryAfterSequence = 0
         generation = GENERATIONS.incrementAndGet()
         configuringAt = null
         if (owner == null) return
@@ -93,6 +99,7 @@ internal class H264VideoOutput(
                 require(consumed in acknowledged..sequence)
                 acknowledged = consumed
                 while (pending.firstOrNull()?.let { it.sequence <= consumed } == true) pending.removeFirst()
+                if (consumed > queueRecoveryAfterSequence) queueRecoveryAt = null
                 if (!displayed && consumed > 0) { displayed = true; diagnostic("first frame rendered") }
             }
         }
@@ -101,12 +108,25 @@ internal class H264VideoOutput(
         if (closed || !ready || owner == null) return
         val frame = RtcAccessUnit.inspect(bytes) ?: run { resetChain(); return }
         val prefix = if (frame.key) parameters else ByteArray(0)
-        queue.offer(frame.size, nanos, frame.key, clock(), prefix.size) { frame.copyAnnexB(prefix) }
-        if (queue.takeSendFailure() != null) { resetChain(); return }
+        if (frame.size.toLong() + prefix.size > RtcFrameQueue.MAX_BYTES) { resetChain(); return }
+        val now = clock()
+        if (queueRecoveryAt != null && !queue.sourceActive(now)) queueRecoveryAt = now
+        queue.offer(frame.size, nanos, frame.key, now, prefix.size) { frame.copyAnnexB(prefix) }
+        noteQueueLoss()
         if (queue.needsKey) requestKey()
     }
+    private fun noteQueueLoss() {
+        if (queue.takeSendFailure() == null) return
+        if (queueRecoveryAt == null) queueRecoveryAt = clock()
+        queueRecoveryAfterSequence = sequence
+        // Only unsent frames were dropped. Ordered TCP preserves earlier references; the queue
+        // rejects dependent frames until an IDR, so this need not consume a transport retry.
+        if (!queueLossReported) {
+            queueLossReported = true
+            diagnostic("browser WebCodecs: video-queue-recovery expired=${queue.expiredFrames} overflow=${queue.overflowFrames}")
+        }
+    }
     private fun resetChain() {
-        // Already-sent references may be buffered in TCP. Reconnect, not latest-frame skipping.
         fail("video-reference-lost", true)
     }
     @Synchronized private fun tick() {
@@ -118,7 +138,10 @@ internal class H264VideoOutput(
         }
         if (!ready) return
         if (queue.needsKey) requestKey()
-        if (queue.recoveryExpired(now, TIMEOUT_NS)) { fail("video-keyframe-timeout", true); return }
+        if (queue.recoveryExpired(now, TIMEOUT_NS) ||
+            queue.sourceActive(now) && queueRecoveryAt?.let { now - it >= TIMEOUT_NS } == true) {
+            fail("video-keyframe-timeout", true); return
+        }
         if (now - reportedAt >= 1_000_000_000L) {
             reportedAt = now
             if (control?.invoke(JSONObject().put("type", "video-progress").put("generation", generation)
@@ -132,7 +155,7 @@ internal class H264VideoOutput(
         }
         if (pending.size >= MAX_IN_FLIGHT) return
         val frame = queue.poll(now)
-        if (queue.takeSendFailure() != null) { resetChain(); return }
+        noteQueueLoss()
         if (frame == null) return
         if (pending.sumOf { it.bytes.toLong() } + frame.bytes.size > RtcFrameQueue.MAX_BYTES) {
             resetChain(); return

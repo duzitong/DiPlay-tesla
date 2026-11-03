@@ -2,24 +2,31 @@
 import {decodeAudioPacket} from './audio-packet.js';
 export {decodeAudioPacket} from './audio-packet.js';
 
-export function normalizeAudioVolume(value) {
+export function normalizeAudioVolume(value, maximum=100) {
   if ((typeof value !== 'string' && typeof value !== 'number') || String(value).trim() === '') return 100;
   const number = Number(value);
-  return Number.isFinite(number) ? Math.round(Math.max(0,Math.min(100,number))) : 100;
+  return Number.isFinite(number) ? Math.round(Math.max(0,Math.min(maximum,number))) : 100;
 }
 
 // A playback preference survives temporary route loss; only the driver's toggle saves it.
 export function createAudioPreference({audio,storedValue=null,save=()=>{}}) {
-  let wanted=storedValue!=='false';
+  let wanted=storedValue!=='false', available=true;
   return {
     get wanted(){return wanted;},
+    get available(){return available;},
+    setAvailable(value){
+      if(available===value)return;
+      available=value;
+      if(!available)audio.close();
+    },
     start(){
-      if(!wanted)return Promise.resolve(false);
+      if(!available || !wanted)return Promise.resolve(false);
       if(audio.enabled){audio.heartbeat();return Promise.resolve(true);}
       // Do not suppress a user gesture behind a resume() awaiting autoplay permission.
       return audio.enable();
     },
     toggle(){
+      if(!available)return Promise.resolve(false);
       wanted=!audio.enabled;save(String(wanted));
       if(!wanted){audio.disable('manual-off');return Promise.resolve(false);}
       return audio.enable();
@@ -34,18 +41,19 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
   const retired={underruns:0,musicUnderruns:0,navigationUnderruns:0,overruns:0};
   const legacyUnderruns={music:0,navigation:0};
   const streams = new Map(), nodes = new Set();
-  const volumes = {music:normalizeAudioVolume(initialVolumes.music),navigation:normalizeAudioVolume(initialVolumes.navigation)};
+  const volumes = {music:normalizeAudioVolume(initialVolumes.music),navigation:normalizeAudioVolume(initialVolumes.navigation,300)};
   const gains = new Map();
+  const gainValue = role => volumes[role]/100;
   function setVolume(role,value) {
     if (!Object.hasOwn(volumes,role)) return null;
-    volumes[role] = normalizeAudioVolume(value);
+    volumes[role] = normalizeAudioVolume(value,role==='navigation'?300:100);
     const parameter = gains.get(role)?.gain;
     if (parameter) {
       const now = context.currentTime;
       // Hold an in-progress ramp when possible, avoiding clicks on repeated input.
       if (typeof parameter.cancelAndHoldAtTime === 'function') parameter.cancelAndHoldAtTime(now);
       else { parameter.cancelScheduledValues(now); parameter.setValueAtTime(parameter.value,now); }
-      parameter.linearRampToValueAtTime(volumes[role]/100,now+.03);
+      parameter.linearRampToValueAtTime(gainValue(role),now+.03);
     }
     return volumes[role];
   }
@@ -93,7 +101,7 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
         moduleLoad=null;workletFailed=false;
         for (const role of ['music','navigation']) {
           const gain = context.createGain();
-          gain.gain.value = volumes[role]/100;
+          gain.gain.value = gainValue(role);
           gain.connect(context.destination); gains.set(role,gain);
         }
         context.onstatechange = () => {
@@ -205,6 +213,8 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
     stats() {
       const now=context?.currentTime||0;
       return {enabled,targetMs:bufferMs,queuedMs:enabled?(worklet?workletStats.queuedMs||0:Math.max(0,...[...streams.values()].map(stream=>(stream.next-now)*1000))):0,
+        musicVolume:volumes.music,navigationVolume:volumes.navigation,
+        musicGain:gainValue('music'),navigationGain:gainValue('navigation'),
         ...workletStats,underruns:underruns+retired.underruns+(workletStats.underruns||0),
         musicUnderruns:legacyUnderruns.music+retired.musicUnderruns+(workletStats.musicUnderruns||0),
         navigationUnderruns:legacyUnderruns.navigation+retired.navigationUnderruns+(workletStats.navigationUnderruns||0),

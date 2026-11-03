@@ -173,6 +173,31 @@ try {
     const sample=await page.evaluate(()=>__samples.at(-1));
     assert.ok(Math.abs(sample.music-.25*.35/Math.sqrt(2))<.004,mode+': '+JSON.stringify(sample));
     assert.ok(Math.abs(sample.navigation-.25*.8/Math.sqrt(2))<.004,mode+': '+JSON.stringify(sample));
+    await page.evaluate(()=>media.setAudioVolume('navigation',33));
+    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>
+      Math.abs(sample.navigation-.25*.33/Math.sqrt(2))<.004));
+    const reduced=await page.evaluate(()=>__samples.at(-1));
+    await page.evaluate(()=>media.setAudioVolume('navigation',100));
+    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>
+      Math.abs(sample.navigation-.25/Math.sqrt(2))<.004));
+    const boosted=await page.evaluate(()=>__samples.at(-1));
+    const sourceRms=.25/Math.sqrt(2);
+    assert.ok(Math.abs(boosted.navigation/sourceRms-1)<.03,mode+': 100 percent has no base amplification');
+    assert.ok(Math.abs(boosted.music-reduced.music)<.004,mode+': music gain must be unchanged');
+    await page.evaluate(()=>media.setAudioVolume('navigation',300));
+    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>
+      Math.abs(sample.navigation-.75/Math.sqrt(2))<.004));
+    const maximum=await page.evaluate(()=>__samples.at(-1));
+    assert.ok(Math.abs(maximum.navigation/sourceRms-3)<.03,mode+': 300 percent rendered guidance gain');
+    assert.ok(Math.abs(maximum.music-boosted.music)<.004,mode+': navigation boost must not raise music');
+    (report.navigationGain ||= {})[mode]={sourceRms,boostedRms:boosted.navigation,
+      ratio:boosted.navigation/sourceRms,maximumRms:maximum.navigation,maximumRatio:maximum.navigation/sourceRms,
+      reducedRms:reduced.navigation,musicRms:boosted.music};
+    await page.evaluate(()=>media.setAudioVolume('navigation',0));
+    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>sample.navigation<.001 && sample.music>.03));
+    await page.evaluate(()=>media.setAudioVolume('navigation',80));
+    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>
+      Math.abs(sample.navigation-.25*.8/Math.sqrt(2))<.004));
     if(mode!=='failed') {
       await page.evaluate(async()=>{
         const canvas=document.createElement('canvas');canvas.width=960;canvas.height=540;

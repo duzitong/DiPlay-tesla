@@ -5114,7 +5114,7 @@ open class CarPlayHostActivity : ComponentActivity() {
 
     /** Car Bluetooth audio: shows whether the iPhone keeps A2DP/HFP with the car now and once CarPlay runs. */
     private fun logCarBluetoothAudio() {
-        appendLog("Car Bluetooth audio: on; CarPlay audio not offered")
+        appendLog("Car Bluetooth audio: preference on; checking local Bluetooth profiles")
         val adapter = runCatching { getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter() }.getOrNull()
             ?: return appendLog("Car Bluetooth audio: no Bluetooth adapter")
         fun probe(moment: String) {

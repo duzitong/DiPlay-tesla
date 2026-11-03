@@ -22,20 +22,61 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class BufferedAudioSessionTest {
     @Test
-    fun disabledOutputDeclinesType103BeforeCallingTheMediaHandler() {
-        var setups = 0
-        val session = session(disabled = true, media = object : AirPlayMediaHandler {
-            override fun onBufferedAudio(session: AirPlaySession, stream: Map<String, Any?>): Map<String, Any?>? {
-                setups++
+    fun nativeMainAudioRejectsMainStreamsBeforeOpeningPortsButAcceptsAlternateGuidanceAndVideo() {
+        val opened = arrayListOf<String>()
+        val session = session(externalMainAudio = true, media = object : AirPlayMediaHandler {
+            override fun onAudio(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Map<String, Any?> {
+                opened += "$type:${stream["audioType"]}"
+                return mapOf("type" to type, "dataPort" to 1234)
+            }
+            override fun onBufferedAudio(session: AirPlaySession, stream: Map<String, Any?>): Map<String, Any?> {
+                opened += "buffered"
                 return mapOf("type" to 103, "dataPort" to 1234)
             }
+            override fun onScreen(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Int = 4321
         })
         try {
-            val response = handle(session, "SETUP", BplistCodec.encode(mapOf("streams" to listOf(mapOf("type" to 103)))))
-            val decoded = BplistCodec.decode(response.body) as Map<*, *>
-            assertEquals(emptyList<Any>(), decoded["streams"])
-            assertEquals(0, setups)
+            val streams = listOf(
+                mapOf("type" to 100, "audioType" to "media"),
+                mapOf("type" to 102), mapOf("type" to 103),
+                mapOf("type" to 101, "audioType" to "media"),
+                mapOf("type" to 100, "audioType" to "default"),
+                mapOf("type" to 101, "audioType" to "default"),
+                mapOf("type" to 100, "audioType" to "alert"),
+                mapOf("type" to 110),
+            )
+            val response = handle(session, "SETUP", BplistCodec.encode(mapOf("streams" to streams)))
+            val accepted = ((BplistCodec.decode(response.body) as Map<*, *>)["streams"] as List<*>)
+                .map { ((it as Map<*, *>)["type"] as Number).toInt() }
+            assertEquals(listOf(101, 110), accepted)
+            assertEquals(listOf("101:default"), opened)
         } finally { session.close() }
+    }
+
+    @Test
+    fun audioOutputPolicyDeclinesEveryAudioTypeBeforeHandlersWithoutBlockingVideo() {
+        for (disabled in listOf(false, true)) {
+            var setups = 0
+            val session = session(disabled = disabled, media = object : AirPlayMediaHandler {
+                override fun onAudio(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Map<String, Any?> {
+                    setups++
+                    return mapOf("type" to type, "dataPort" to 1234)
+                }
+                override fun onBufferedAudio(session: AirPlaySession, stream: Map<String, Any?>): Map<String, Any?> {
+                    setups++
+                    return mapOf("type" to 103, "dataPort" to 1234)
+                }
+                override fun onScreen(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Int = 4321
+            })
+            try {
+                val types = listOf(100, 101, 102, 103, 110)
+                val response = handle(session, "SETUP", BplistCodec.encode(mapOf("streams" to types.map { mapOf("type" to it) })))
+                val decoded = BplistCodec.decode(response.body) as Map<*, *>
+                val accepted = (decoded["streams"] as List<*>).map { ((it as Map<*, *>)["type"] as Number).toInt() }
+                assertEquals(if (disabled) listOf(110) else types, accepted)
+                assertEquals(if (disabled) 0 else 4, setups)
+            } finally { session.close() }
+        }
     }
 
     @Test
@@ -286,14 +327,14 @@ class BufferedAudioSessionTest {
         AirPlaySession::class.java.getDeclaredMethod("handle", RtspMessage.Request::class.java).apply { isAccessible = true }
             .invoke(session, RtspMessage.Request(method, "rtsp://test", "RTSP/1.0", emptyMap(), body)) as RtspMessage.Response
 
-    private fun session(disabled: Boolean = false, media: AirPlayMediaHandler): AirPlaySession = AirPlaySession(
+    private fun session(disabled: Boolean = false, externalMainAudio: Boolean = false, media: AirPlayMediaHandler): AirPlaySession = AirPlaySession(
         socket = object : Socket() {
             override fun getRemoteSocketAddress(): SocketAddress = InetSocketAddress(InetAddress.getLoopbackAddress(), 1234)
         },
         config = AirPlayConfig(
             deviceName = "test", deviceId = "02:00:00:00:00:02", btMac = "02:00:00:00:00:01", sourceVersion = "1.0",
             main = AirPlayDisplayConfig(widthPixels = 800, heightPixels = 480),
-            mainBufferedAudio = true, disableAudioOutput = disabled,
+            mainBufferedAudio = true, disableAudioOutput = disabled, externalMainAudio = externalMainAudio,
         ),
         identity = AirPlayIdentity.generate(), pairings = PairingStore(), mfi = null,
         listener = object : AirPlaySessionListener {}, media = media,

@@ -25,12 +25,13 @@ class BrowserServerTest {
         var navigationLevel = -10
         var navigationWrites = 0
         var reportReads = 0
+        val actions = mutableListOf<String>()
         val diagnosticLines = java.util.Collections.synchronizedList(mutableListOf<String>())
         val target = object : BrowserTarget {
             override fun status() = JSONObject().put("display", BrowserDisplayJson.encode(selected))
                 .put("navigationAttenuationDb", navigationLevel)
             override fun touch(contacts: List<AirPlayContact>): Boolean { touches++; return true }
-            override fun action(name: String) = true
+            override fun action(name: String): Boolean { actions.add(name); return true }
             override fun saveDisplay(display: BrowserDisplay) { selected = display }
             override fun exportDiagnostics(): String {
                 assertEquals("Browser diagnostic report requested", diagnosticLines.last())
@@ -96,6 +97,15 @@ class BrowserServerTest {
             assertEquals(401, request("/api/status", auth = false).first)
             assertEquals(403, request("/api/status",origin = "http://elsewhere").first)
             assertEquals(200, request("/api/status").first)
+            for (action in listOf("resume", "pause", "previous", "next", "play")) {
+                val body = """{"action":"$action"}"""
+                assertEquals(401, request("/api/action", auth = false, body = body).first)
+                assertEquals(403, request("/api/action", origin = "http://elsewhere", body = body).first)
+                assertEquals(200, request("/api/action", body = body).first)
+            }
+            assertEquals(listOf("resume", "pause", "previous", "next", "play"), actions)
+            assertEquals(400, request("/api/action", body = """{"action":"unsupported"}""").first)
+            assertEquals(5, actions.size)
             assertEquals(401, request("/api/diagnostic-report", auth = false).first)
             assertEquals(403, request("/api/diagnostic-report", origin = "https://elsewhere").first)
             assertEquals(405, request("/api/diagnostic-report", body = "{}").first)

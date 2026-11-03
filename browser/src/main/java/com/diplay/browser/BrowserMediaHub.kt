@@ -8,7 +8,7 @@ import java.util.UUID
 
 /** Composition seam for one authenticated media viewer; the core and proxy do not know it. */
 class BrowserMediaHub(private val record: (String) -> Unit = {}) {
-    val audio = BrowserAudioOutput()
+    val audio = BrowserAudioOutput().apply { diagnostic = record }
     private val lock = Any()
     private var owner: Any? = null
     private var send: ((JSONObject) -> Boolean)? = null

@@ -161,7 +161,7 @@ class BrowserServer(
                 "/api/action" -> {
                     val body = body(session) ?: return reply(Response.Status.BAD_REQUEST)
                     val action = body.getString("action")
-                    require(action in setOf("home", "back", "siri", "play", "next", "previous", "reconnect"))
+                    require(action in setOf("home", "back", "siri", "play", "resume", "pause", "next", "previous", "reconnect"))
                     controls.release()
                     if (target.action(action)) json(JSONObject().put("ok", true)) else reply(Response.Status.CONFLICT)
                 }

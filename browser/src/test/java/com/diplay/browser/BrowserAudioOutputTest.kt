@@ -120,6 +120,8 @@ class BrowserAudioOutputTest {
     @Test fun musicAndGuidanceRolesDoNotDependOnStreamCreationOrder() {
         for (types in listOf(listOf("media", "default"), listOf("default", "media"))) {
             val output = BrowserAudioOutput { 1L }
+            val diagnostics = mutableListOf<String>()
+            output.diagnostic = { diagnostics.add(it) }
             val owner = Any()
             val packets = mutableListOf<ByteArray>()
             output.attach(owner, { bytes, _ -> packets.add(bytes); true }, { true })
@@ -133,6 +135,9 @@ class BrowserAudioOutputTest {
                     assertEquals(if (type == "media") 1 else 2, header.getShort(14).toInt())
                 }
             }
+            assertEquals(2, diagnostics.size)
+            assertTrue(diagnostics.any { it.contains("type=default role=2") })
+            assertTrue(diagnostics.any { it.contains("type=media role=1") })
         }
     }
     @Test fun rolesSurviveStreamStopReattachmentAndOutputRecreation() {

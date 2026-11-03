@@ -45,9 +45,12 @@ transport switch; it does not silently fall back or reconnect CarPlay.
 
 The video socket uses the existing pairing token plus the current media owner's
 session lease. Configuration generations, keyframes and cumulative consumed-frame
-ACKs bound both queues and in-flight video to six frames / 2 MiB each. Loss of a
-predictive chain or a three-second pending-video timeout closes only the video link,
-then requests configuration and a fresh keyframe (at most three recovery retries).
+ACKs bound both queues and in-flight video to six frames / 2 MiB each. Expiry or
+overflow of the 50 ms **unsent** queue drops its dependent frames and requests a
+fresh keyframe on the same ordered video link, retaining the last picture. It does
+not spend a transport retry. Invalid input, send failure or a three-second
+pending-video/keyframe timeout closes only the video link, then requests
+configuration and a fresh keyframe (at most three recovery retries).
 Idle sources do not trigger a decode timeout. `/api/media` PCM/signaling remains
 independent. WebCodecs does not bypass vehicle/browser restrictions; desktop
 compatibility must not be treated as proof of compatibility in a Tesla.
@@ -56,6 +59,68 @@ WebCodecs diagnostics distinguish decoder outputs from successful canvas draw
 submissions. A consumed-frame ACK confirms the draw submission, not compositor
 presentation or physical display scanout. These counters do not measure
 glass-to-glass latency.
+
+## Split navigation and iPhone Bluetooth audio
+
+With the all-Bluetooth switch **off**, the Tesla APK reserves CarPlay's main-audio
+resource for the native source while keeping the independent alternate navigation
+channel available. Select the car's Bluetooth output on the iPhone for music.
+Navigation prompts then use the browser and its guidance gain; DiPlay does not
+relay the Bluetooth audio or choose a Bluetooth device on the phone.
+
+The complete nine-format/nine-latency declaration is intentional: removing music
+formats also removed Amap's navigation audio on the tested iPhone. Main-audio
+resource constraints implement the split instead, with receiver-side rejection of
+main-audio SETUP (100/102/103) as a guard, not a browser music-mute workaround.
+Only alternate-audio SETUP (101) is accepted in this profile. Buffered music is
+not enabled even if its shared preference was previously saved.
+
+Desktop testing with music audible in iPhone-connected AirPods and navigation in
+the browser confirmed the split. Tesla Bluetooth selection, firmware-specific
+audio-focus behavior, calls and Siri still need their own in-car validation.
+
+The Tesla APK's **Advanced → CarPlay audio over the car's Bluetooth (experimental)**
+opt-in disables all CarPlay audio offers, including navigation. Music, navigation,
+Siri and calls use the **iPhone's direct connection to the car**, not a Bluetooth
+relay from DiPlay. Pair the iPhone with the car and select the car's Bluetooth
+output on the phone; otherwise audio may play on the iPhone. Changing this switch
+reconnects CarPlay. The default remains off; other APK targets retain their
+existing audio policy.
+Disabled audio also declines audio SETUP requests without affecting video SETUP.
+The browser shows the Bluetooth policy, disables its audio controls and closes any
+existing AudioContext without changing saved browser volumes or playback preferences.
+It does not create an audio output in this mode; video and touch remain available.
+Closing the browser does not control the independent iPhone Bluetooth audio path.
+Actual Bluetooth output and background navigation still require in-car verification.
+
+Use **Menu → Show virtual keys** to test Previous, Play, Pause and Next before
+connecting car controls. Play and Pause send separate CarPlay media HID commands;
+the legacy `play` API action remains a toggle. “Submitted” confirms the receiver
+accepted the request, not that the iPhone executed it. Receiver logs record whether
+the press and release were written to its event channel. Test with both the music
+app and navigation visible; these buttons do not adjust Bluetooth navigation volume
+or claim the browser's system media session.
+Whitelisted media/arrow keydown events are logged without intercepting them, so
+an in-car test can establish which steering-wheel events actually reach the page.
+
+The virtual **Guidance − / +** buttons change only the browser's navigation gain
+in 10-percentage-point steps, sharing the slider and its saved 0–300% value.
+They send no phone volume keys and are disabled in all-Bluetooth mode. Navigation
+must actually arrive on CarPlay's guidance stream; music sent directly to the car
+over Bluetooth bypasses these controls. Gain above 100% can clip; start at 100%.
+
+When Bluetooth mode is off, the browser's **Navigation volume** ranges from **0–300%**, with **no extra base
+gain**: 100% is the original signal level, 300% is threefold original signal
+amplitude (approximately +9.5 dB), and 0% mutes. Saved percentages are retained.
+This is not threefold perceived loudness. Start at 100% and increase gradually; high gain can clip. Music
+gain remains limited to 0–100% on receivers that play browser music; that control
+does not adjust music sent directly from the iPhone in the split profile.
+Adjustments apply immediately, persist in this browser,
+and affect neither music gain nor the car's Bluetooth volume or existing ducking.
+The separate host navigation attenuation
+in Advanced audio remains shared with Android and still applies before this gain.
+Large-font full, compact/high-density and Arabic RTL screenshots are in
+`docs/testing/tesla/bluetooth-navigation-20261103/`.
 
 ## HTTPS browser gateway (0.1.1+)
 

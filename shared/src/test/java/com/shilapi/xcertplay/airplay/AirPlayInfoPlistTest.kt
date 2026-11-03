@@ -10,6 +10,29 @@ import org.junit.Test
 
 class AirPlayInfoPlistTest {
     @Test
+    fun nativeMainAudioKeepsTheCompleteEndpointWhileReservingOnlyMainAudio() {
+        val base = AirPlayConfig("test", "device", "bt", "version", AirPlayDisplayConfig(1280, 720),
+            microphone = true, mainBufferedAudio = true)
+        val original = AirPlayInfoPlist.build(base)
+        val actual = AirPlayInfoPlist.build(base.copy(externalMainAudio = true))
+        val formats = (actual["audioFormats"] as List<*>).map { it as Map<*, *> }
+        assertTrue(formats.any { it["audioType"] == "media" })
+        assertTrue(formats.any { it["type"] == 101 && it["audioType"] == "default" })
+        assertTrue(formats.any { it["audioType"] == "default" && it.containsKey("audioInputFormats") })
+        assertEquals(original["audioLatencies"], actual["audioLatencies"])
+        assertEquals(original["features"], actual["features"])
+        assertFalse(actual.containsKey("mainBufferedInfo"))
+        assertFalse(base.copy(externalMainAudio = true).bufferedAudioOutputEnabled)
+        assertEquals(9, formats.size)
+        val resources = ((actual["modes"] as Map<*, *>)["resources"] as List<*>).map { it as Map<*, *> }
+        val originalResources = (original["modes"] as Map<*, *>)["resources"] as List<*>
+        assertEquals(originalResources[0], resources[0])
+        assertEquals(2, resources[1]["resourceID"])
+        assertEquals(1000, resources[1]["takeConstraint"])
+        assertEquals(1000, resources[1]["borrowConstraint"])
+    }
+
+    @Test
     fun bothDisplaysDeclareAutomaticAppearanceAtConnection() {
         val config = AirPlayConfig(
             deviceName = "test", deviceId = "02:00:00:00:00:02", btMac = "02:00:00:00:00:02",

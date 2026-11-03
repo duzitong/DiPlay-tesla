@@ -77,6 +77,42 @@ test('a gesture can unlock default audio while the first autoplay resume is pend
   assert.equal(audio.enabled,true);assert.equal(messages.at(-1).playback,true);audio.close();
 });
 
+test('host-disabled audio closes its context and blocks gestures without changing saved preferences',async()=>{
+  const {audio,context}=fixture({music:35,navigation:275}),saved=[];
+  let created=0;
+  const nativeCreateGain=context.createGain;
+  context.createGain=()=>{created++;return nativeCreateGain();};
+  context.close=async()=>{context.state='closed';};
+  const preference=createAudioPreference({audio,save:value=>saved.push(value)});
+  preference.setAvailable(false);
+  assert.equal(await preference.start(),false);
+  assert.equal(await preference.toggle(),false);
+  assert.equal(created,0);
+  assert.equal(preference.wanted,true);
+  preference.setAvailable(true);
+  assert.equal(await preference.start(),true);
+  assert.equal(created,2);
+  preference.setAvailable(false);
+  assert.equal(context.state,'closed');
+  assert.equal(audio.enabled,false);
+  assert.deepEqual(audio.volumes,{music:35,navigation:275});
+  assert.deepEqual(saved,[]);
+  assert.equal(await preference.start(),false);
+});
+
+test('switching to host audio while autoplay resumes cannot enable the old context',async()=>{
+  const {audio,context}=fixture();
+  let resume;
+  context.resume=()=>new Promise(resolve=>{resume=resolve;});
+  const preference=createAudioPreference({audio});
+  const pending=preference.start();
+  preference.setAvailable(false);
+  resume();
+  assert.equal(await pending,false);
+  assert.equal(audio.enabled,false);
+  assert.equal(preference.wanted,true);
+});
+
 test('continuous audio acknowledges every packet without publishing unchanged controls',async()=>{
   const{audio,context,started,messages,states}=fixture();await audio.enable();
   for(let i=0;i<50;i++) {
@@ -108,6 +144,41 @@ test('caller changes to a reported state do not invalidate change detection',asy
 test('volume normalization preserves safe defaults, clamps values and rejects malformed storage',()=>{
   for(const value of [undefined,null,'','  ','NaN','Infinity',NaN,Infinity,{},true])assert.equal(normalizeAudioVolume(value),100);
   for(const [value,expected] of [['0',0],['35',35],[-5,0],[150,100],[24.6,25]])assert.equal(normalizeAudioVolume(value),expected);
+  for(const [value,expected] of [[undefined,100],['invalid',100],[-5,0],[150,150],['275',275],[999,300]]) {
+    assert.equal(normalizeAudioVolume(value,300),expected);
+  }
+});
+
+test('navigation reaches 300 percent without a hidden base gain across context recreation',async()=>{
+  const {audio,gains,started,context}=fixture();
+  await audio.enable();
+  assert.equal(gains[0].gain.value,1);
+  assert.equal(gains[1].gain.value,1);
+  assert.equal(audio.stats().navigationVolume,100);
+  assert.equal(audio.stats().navigationGain,1);
+  assert.equal(audio.stats().musicGain,1);
+  audio.receive(packet(91,24000,1,480,2));
+  audio.receive(packet(92,48000,2,960,1));
+  assert.equal(started[0].target,gains[1]);
+  assert.equal(started[1].target.gain.value,1);
+  context.currentTime=.1;
+  assert.equal(audio.setVolume('navigation',50),50);
+  assert.equal(audio.stats().navigationGain,.5);
+  assert.deepEqual(gains[1].gain.events,[['hold',.1],['ramp',.5,.13]]);
+  assert.equal(gains[0].gain.value,1);
+  assert.equal(audio.setVolume('navigation',0),0);
+  assert.equal(gains[1].gain.value,0);
+  assert.equal(audio.setVolume('navigation',150),150);
+  assert.equal(gains[1].gain.value,1.5);
+  assert.equal(audio.setVolume('navigation',999),300);
+  assert.equal(audio.stats().navigationGain,3);
+  assert.equal(gains[1].gain.value,3);
+  assert.equal(audio.setVolume('music',300),100);
+  assert.equal(gains[0].gain.value,1);
+  audio.close();await audio.enable();
+  assert.equal(gains.at(-1).gain.value,3);
+  assert.equal(gains.at(-2).gain.value,1);
+  audio.close();
 });
 
 test('roles select independent gains regardless of stream order; PCM and legacy audio are unchanged',async()=>{
@@ -183,6 +254,8 @@ test('worklet owns PCM playback while existing gains and packet-independent cont
     transport.onaudiostats({queuedMs:400,underruns:3,musicUnderruns:3,navigationUnderruns:0});
     assert.equal(audio.stats().queuedMs,400);assert.equal(audio.stats().musicUnderruns,3);
     audio.setVolume('music',35);assert.equal(gains[0].gain.value,.35);
+    audio.setVolume('navigation',100);assert.equal(gains[1].gain.value,1);
+    assert.equal(calls.find(c=>c[0]==='connect' && c[1]===1)[2],gains[1]);
     audio.setBuffer(400);assert.ok(calls.some(c=>c[0]==='buffer'&&c[1]===400));
     audio.stopped(9);assert.ok(calls.some(c=>c[0]==='stop'&&c[1]===9));
     assert.equal(started.length,0);

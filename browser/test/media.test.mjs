@@ -498,12 +498,41 @@ test('browser volumes load independently, persist normalized values and never re
   try {
     assert.deepEqual(f.media.audio.volumes,{music:35,navigation:100});
     assert.equal(f.media.setAudioVolume('music',0),0);assert.equal(f.storage.get('diplay-music-volume'),'0');
-    assert.equal(f.media.setAudioVolume('navigation',75),75);assert.equal(f.storage.get('diplay-navigation-volume'),'75');
+    assert.equal(f.media.setAudioVolume('navigation',275),275);assert.equal(f.storage.get('diplay-navigation-volume'),'275');
     assert.equal(f.media.setAudioVolume('other',50),null);
     assert.equal(f.sockets.length,1);assert.equal(f.sockets[0].closeCalls,0);assert.equal(f.messages('hello').length,1);
     f.media.close();f.media.open();f.sockets.at(-1).open();
-    assert.deepEqual(f.media.audio.volumes,{music:0,navigation:75});
+    assert.deepEqual(f.media.audio.volumes,{music:0,navigation:275});
   } finally { await f.dispose(); }
+});
+
+test('host audio policy blocks welcome and gestures while keeping video and saved audio choices',async()=>{
+  const f=fixture({savedVolumes:{music:'35',navigation:'275'}});
+  try {
+    f.media.setAudioAvailable(false);
+    const peer=await f.ready();
+    f.sockets[0].message({type:'welcome'});
+    assert.equal(await f.media.audioPreference.toggle(),false);
+    assert.equal(f.storage.get('diplay-browser-audio'),'false');
+    assert.equal(f.media.audio.enabled,false);
+    assert.ok(!f.messages('audio-ready').some(value=>value.playback));
+    f.media.setAudioAvailable(true);
+    await flush();
+    assert.equal(f.media.audio.enabled,false,'saved manual off must survive Bluetooth mode');
+    await f.media.audioPreference.toggle();
+    assert.equal(f.media.audio.enabled,true);
+    f.media.setAudioAvailable(false);
+    assert.equal(f.media.audio.stats().contextState,'unavailable');
+    assert.equal(await f.media.audioPreference.start(),false);
+    f.media.setAudioAvailable(true);
+    await flush();
+    assert.equal(f.media.audio.enabled,true);
+    assert.deepEqual(f.media.audio.volumes,{music:35,navigation:275});
+    assert.equal(f.sockets.length,1);
+    assert.equal(peer.closeCalls,0);
+    assert.equal(f.media.displayed,true);
+    assert.equal(f.storage.get('diplay-browser-audio'),'true');
+  } finally {await f.dispose();}
 });
 
 test('blocked storage keeps default volumes and live adjustments for the page lifetime',async()=>{
@@ -514,6 +543,19 @@ test('blocked storage keeps default volumes and live adjustments for the page li
     assert.deepEqual(f.media.audio.volumes,{music:45,navigation:100});
     assert.equal(f.sockets.length,1);
   } finally { await f.dispose(); }
+});
+
+test('saved navigation boost loads above 100 without raising music limits or changing old defaults',async()=>{
+  const f=fixture({savedVolumes:{music:'300',navigation:'275'}});
+  try {
+    assert.deepEqual(f.media.audio.volumes,{music:100,navigation:275});
+    assert.equal(f.media.audio.stats().navigationGain,2.75);
+    assert.equal(f.media.setAudioVolume('navigation',999),300);
+    assert.equal(f.storage.get('diplay-navigation-volume'),'300');
+    assert.equal(f.media.setAudioVolume('music',300),100);
+    assert.equal(f.media.audio.stats().musicGain,1);
+    assert.equal(f.sockets[0].closeCalls,0);
+  } finally {await f.dispose();}
 });
 
 test('a rejected HEVC offer reports codec incompatibility and leaves JPEG disabled',async()=>{

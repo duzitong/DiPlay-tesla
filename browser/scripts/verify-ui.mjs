@@ -24,7 +24,8 @@ await mkdir(output, {recursive:true});
 const initialDisplay = () => ({mode:'RIGHT',right:{width:1024,height:768},full:{width:1920,height:1080},fps:20,jpegFps:20,jpegQuality:75});
 let display = initialDisplay(), activeDisplay = initialDisplay(), touches = [], saves = [], actions = [], lateFrames = 0;
 const clientDiagnostics=[];
-let failNextStatus=false,failNextLogExport=false;
+let failNextStatus=false,failNextLogExport=false,audioRoute='browser';
+let failNextAction=false,holdNextAction=null,releaseAction=null;
 const diagnosticReport='Browser diagnostic evidence\nCarPlay audio stats maxGapMs=502 dropped=0\n';
 const pixel = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==', 'base64');
 const server = createServer(async (req,res) => {
@@ -44,14 +45,22 @@ const server = createServer(async (req,res) => {
     }
     if(url.pathname==='/api/status') {
       if(failNextStatus){failNextStatus=false;res.writeHead(503);res.end();return;}
-      return json({connected:true,stage:'Synthetic browser verification',display,activeDisplay,
+      return json({connected:true,audio:audioRoute,stage:'Synthetic browser verification',display,activeDisplay,
         pendingReconnect:JSON.stringify(display)!==JSON.stringify(activeDisplay)});
     }
     if(url.pathname==='/api/display') {
       display=await body(); display.jpegFps=Math.min(display.fps,30); saves.push(display); return json(display);
     }
     if(url.pathname==='/api/touch') {touches.push(await body()); return json({ok:true});}
-    if(url.pathname==='/api/action') {actions.push(await body()); return json({ok:true});}
+    if(url.pathname==='/api/action') {
+      actions.push(await body());
+      if(holdNextAction){
+        const held=holdNextAction;holdNextAction=null;
+        await new Promise(resolve=>{releaseAction=resolve;held();});
+      }
+      if(failNextAction){failNextAction=false;res.writeHead(409);res.end();return;}
+      return json({ok:true});
+    }
     if(url.pathname==='/api/frame') {
       // Deliberately finish a JPEG request after real WebRTC has taken the canvas.
       setTimeout(()=>{lateFrames++; res.writeHead(200,{'Content-Type':'image/jpeg','X-Frame-Sequence':'1'});res.end(pixel);},2500);
@@ -75,7 +84,7 @@ function installFixture({cjk}) {
   // This in-page signaling fixture exercises compatibility transport; verify-audio tests real workers.
   window.Worker=undefined;
   localStorage.setItem('diplay-token','0'.repeat(32));
-  localStorage.setItem('diplay-browser-audio','false');
+  if(localStorage.getItem('diplay-browser-audio')===null)localStorage.setItem('diplay-browser-audio','false');
   localStorage.setItem('diplay-video','auto');
   localStorage.setItem('diplay-rtc-renderer','native');
   localStorage.setItem('diplay-rtc-recovery-ms','10000');
@@ -88,11 +97,11 @@ function installFixture({cjk}) {
       document.head.append(style);
     }
   });
-  const fixture=window.__uiFixture={hellos:[],answers:0,ready:0,codec:null,encoded:0,errors:[],
+  const fixture=window.__uiFixture={hellos:[],answers:0,ready:0,codec:null,encoded:0,errors:[],audioContexts:[],audioReady:[],
     counters:{expiredFrames:0,overflowFrames:0,keyframeSkips:0,sendFailures:0}};
   const Audio=window.AudioContext;
   window.AudioContext=class extends Audio {
-    constructor(options){super(options);fixture.audioContext=this;}
+    constructor(options){super(options);fixture.audioContext=this;fixture.audioContexts.push(this);}
   };
   const Peer=window.RTCPeerConnection;
   let sequence=0;
@@ -112,6 +121,7 @@ function installFixture({cjk}) {
     }
     send(raw) {
       const data=JSON.parse(raw);
+      if(data.type==='audio-ready')fixture.audioReady.push(data.playback);
       if(data.type==='hello') {
         fixture.hellos.push(data);this.deliver({type:'welcome'});
         if(data.rtc)this.start(data.recoveryGraceMs).catch(error=>fixture.errors.push(String(error)));
@@ -317,12 +327,13 @@ async function verifyVolumes(page,scenario) {
   await page.keyboard.press('Shift+Tab');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'musicVolume');
   for(const role of ['music','navigation']) {
+    const maximum=role==='navigation'?300:100;
     const slider=page.locator('#'+role+'Volume');
     const attributes=await slider.evaluate(node=>({type:node.type,min:node.min,max:node.max,step:node.step,
       disabled:node.disabled,tabIndex:node.tabIndex,label:node.labels?.[0]?.textContent.trim(),
       output:document.getElementById(node.id+'Value').getAttribute('for')}));
     assert.deepEqual({type:attributes.type,min:attributes.min,max:attributes.max,step:attributes.step},
-      {type:'range',min:'0',max:'100',step:'1'});
+      {type:'range',min:'0',max:String(maximum),step:'1'});
     assert.ok(!attributes.disabled && attributes.tabIndex>=0 && attributes.label,role+': accessible slider');
     assert.equal(attributes.output,role+'Volume');
     await slider.scrollIntoViewIfNeeded();
@@ -334,8 +345,8 @@ async function verifyVolumes(page,scenario) {
     await slider.click();
     assert.equal(await page.evaluate(()=>document.activeElement.id),role+'Volume');
     // Keep focus on the slider: each assertion observes live input, before change/blur.
-    const keys=[['Home',0],['ArrowRight',1],['End',100],['ArrowRight',100],
-      ['Home',0],['ArrowLeft',0],['End',100],...(role==='music'?[['ArrowLeft',99]]:[['Home',0],['ArrowRight',1]])];
+    const keys=[['Home',0],['ArrowRight',1],['End',maximum],['ArrowRight',maximum],
+      ['Home',0],['ArrowLeft',0],['End',maximum],...(role==='music'?[['ArrowLeft',99]]:[['End',maximum]])];
     for(const [key,value] of keys) {
       await page.keyboard.press(key);expected[role]=value;stored[role]=String(value);
       assert.equal(await page.evaluate(()=>document.activeElement.id),role+'Volume');
@@ -365,13 +376,135 @@ async function verifyVolumes(page,scenario) {
   return {layout,reloadedLayout,steps,defaults:true,independentControls:true,liveKeyboardInput:true,
     pointerAccessible:true,tabAccessible:true,persistedAfterReload:true,volumeKeepsMedia:true,noCarPlayActions:true};
 }
+async function verifyBluetoothAudio(page,scenario) {
+  const saved=await page.evaluate(()=>{
+    localStorage.setItem('diplay-browser-audio','true');
+    return ['music','navigation'].map(role=>localStorage.getItem('diplay-'+role+'-volume'));
+  });
+  audioRoute='bluetooth';
+  await page.reload();
+  await page.waitForFunction(()=>document.getElementById('audioButton').disabled &&
+    document.getElementById('video').videoWidth===960 && !document.getElementById('video').hidden);
+  await openVolumeMenu(page);
+  for(const id of ['audioButton','musicVolume','navigationVolume','audioBuffer','navigationLevel'])
+    assert.equal(await page.locator('#'+id).isDisabled(),true,id+' must not claim to control Bluetooth sound');
+  assert.equal(await page.evaluate(()=>__uiFixture.audioContexts.length),0,'Bluetooth startup must not create AudioContext');
+  const layout=await assertVolumeLayout(page,scenario.lang);
+  await page.locator('.soundHeading').evaluate(node=>node.scrollIntoView({block:'start'}));
+  await capture(page,`browser-bluetooth-${scenario.name}-font130.jpg`);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(scenario.width/2,scenario.height/2);
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>__uiFixture.audioContexts.length),0,'touch and keyboard gestures must not claim audio');
+  const hellos=await page.evaluate(()=>__uiFixture.hellos.length);
+  assert.ok(await page.evaluate(()=>__uiFixture.audioReady.every(value=>!value)));
+  audioRoute='browser';
+  await page.waitForFunction(()=>!document.getElementById('audioButton').disabled &&
+    __uiFixture.audioContext?.state==='running');
+  audioRoute='bluetooth';
+  await page.waitForFunction(()=>document.getElementById('audioButton').disabled &&
+    __uiFixture.audioContext?.state==='closed');
+  assert.equal(await page.evaluate(()=>__uiFixture.hellos.length),hellos,'audio policy changes must not restart video');
+  assert.deepEqual(await page.evaluate(()=>['music','navigation'].map(role=>localStorage.getItem('diplay-'+role+'-volume'))),saved);
+  assert.equal(await page.evaluate(()=>localStorage.getItem('diplay-browser-audio')),'true');
+  audioRoute='browser';
+  return {layout,noAudioContextAtStartup:true,gesturesBlocked:true,activeContextClosed:true,
+    savedPreferencesPreserved:true,videoConnectionPreserved:true};
+}
+async function verifyMediaControls(page,scenario) {
+  audioRoute='bluetooth';
+  await page.waitForFunction(()=>document.getElementById('audioButton').disabled &&
+    __uiFixture.audioContexts.every(context=>context.state==='closed'));
+  const baseline={actions:actions.length,hellos:await page.evaluate(()=>__uiFixture.hellos.length),
+    contexts:await page.evaluate(()=>__uiFixture.audioContexts.length)};
+  await openVolumeMenu(page);
+  await page.locator('#keysButton').scrollIntoViewIfNeeded();
+  await page.locator('#keysButton').click();
+  await page.locator('#virtualKeys').waitFor({state:'visible'});
+  const submitted=()=>page.waitForFunction(()=>!document.querySelector('[data-action=resume]').disabled &&
+    /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('mediaCommandStatus').textContent));
+  let heldTimer;
+  const held=new Promise((resolve,reject)=>{
+    heldTimer=setTimeout(()=>reject(new Error('Media command did not reach the fixture')),15000);
+    holdNextAction=()=>{clearTimeout(heldTimer);resolve();};
+  });
+  try {
+    await page.locator('[data-action=resume]').click();
+    await held;
+    await page.waitForResponse(response=>response.url().endsWith('/api/status'));
+    for(const action of ['resume','pause','previous','next'])
+      assert.equal(await page.locator(`[data-action=${action}]`).isDisabled(),true);
+    await page.locator('[data-action=pause]').evaluate(node=>node.click());
+    assert.equal(actions.length,baseline.actions+1,'A pending command must not submit twice');
+  } finally {clearTimeout(heldTimer);releaseAction?.();releaseAction=null;holdNextAction=null;}
+  await submitted();
+  for(const action of ['pause','previous','next']) {
+    await page.locator(`[data-action=${action}]`).click();
+    await submitted();
+  }
+  assert.deepEqual(actions.slice(baseline.actions).map(value=>value.action),['resume','pause','previous','next']);
+  const bounds=await page.locator('#virtualKeys button').evaluateAll(nodes=>nodes.map(node=>{
+    const rect=node.getBoundingClientRect();return {x:rect.x,y:rect.y,right:rect.right,bottom:rect.bottom,height:rect.height};
+  }));
+  for(const rect of bounds) {
+    assert.ok(rect.x>=0 && rect.right<=scenario.width && rect.y>=0 && rect.bottom<=scenario.height,JSON.stringify(rect));
+    for(const sibling of bounds.filter(other=>Math.abs(other.y-rect.y)<1))
+      assert.ok(Math.abs(sibling.height-rect.height)<1,'Controls in each row must have equal height');
+  }
+  assert.equal(await page.evaluate(()=>{
+    const pending=document.getElementById('pending'),keys=document.getElementById('virtualKeys');
+    return pending.hidden || pending.getBoundingClientRect().bottom<=keys.getBoundingClientRect().top;
+  }),true,'The reconnect bar must not cover the media buttons or feedback');
+  await capture(page,`browser-media-controls-${scenario.name}-font130.jpg`);
+  failNextAction=true;
+  await page.locator('[data-action=resume]').click();
+  await page.waitForFunction(()=>/指令失败|Command failed|فشل الأمر/.test(document.getElementById('mediaCommandStatus').textContent));
+  assert.equal(await page.locator('[data-action=resume]').isEnabled(),true);
+  assert.equal(await page.evaluate(()=>__uiFixture.hellos.length),baseline.hellos,'Media commands must not restart video');
+  assert.equal(await page.evaluate(()=>__uiFixture.audioContexts.length),baseline.contexts,'Bluetooth controls must not open audio');
+  for(const id of ['navigationVolumeDown','navigationVolumeUp'])
+    assert.equal(await page.locator('#'+id).isDisabled(),true,'Direct Bluetooth must not offer a fake guidance gain');
+  await page.locator('#hideKeys').click();
+  audioRoute='browser';
+  await page.waitForFunction(()=>!document.getElementById('navigationVolumeUp').disabled &&
+    __uiFixture.audioContext?.state==='running');
+  await openVolumeMenu(page);
+  await page.locator('#keysButton').scrollIntoViewIfNeeded();
+  await page.locator('#keysButton').click();
+  const music=await page.locator('#musicVolume').inputValue(),beforeButtons=actions.length;
+  const setNavigation=value=>page.locator('#navigationVolume').evaluate((node,value)=>{
+    node.value=String(value);node.dispatchEvent(new Event('input',{bubbles:true}));
+  },value);
+  const checkNavigation=async value=>{
+    assert.equal(await page.locator('#navigationVolume').inputValue(),String(value));
+    assert.equal(await page.evaluate(()=>localStorage.getItem('diplay-navigation-volume')),String(value));
+    assert.equal(await page.locator('#musicVolume').inputValue(),music);
+    assert.equal(actions.length,beforeButtons,'Guidance gain must not send phone/media commands');
+  };
+  await setNavigation(100);
+  await page.locator('#navigationVolumeUp').click();await checkNavigation(110);
+  await page.locator('#navigationVolumeDown').click();await checkNavigation(100);
+  await setNavigation(0);
+  await page.locator('#navigationVolumeDown').click();await checkNavigation(0);
+  await setNavigation(300);
+  await page.locator('#navigationVolumeUp').click();await checkNavigation(300);
+  await setNavigation(100);
+  await page.locator('#navigationVolumeUp').click();
+  await page.locator('#navigationVolumeDown').click();
+  await capture(page,`browser-navigation-buttons-${scenario.name}-font130.jpg`);
+  assert.equal(await page.evaluate(()=>__uiFixture.hellos.length),baseline.hellos);
+  await page.locator('#hideKeys').click();
+  return {explicitPlayAndPause:true,previousAndNext:true,pendingSerialized:true,failureVisible:true,
+    noAudioContextOrVideoRestart:true,largeFontBoundsAndRowHeights:true,
+    guidanceButtons:{independentGain:true,sharedPersistence:true,bounds:true,noPhoneCommands:true,disabledForBluetooth:true}};
+}
 try {
   const cases=[{name:'full-en',width:1920,height:1080,lang:'en'},
     {name:'compact-zh',width:1024,height:768,lang:'zh-CN',deviceScaleFactor:2},
     {name:'narrow-ar',width:360,height:740,lang:'ar'}];
   for(const scenario of cases) {
     console.log('Checking',scenario.name);
-    display=initialDisplay();activeDisplay=initialDisplay();touches=[];saves=[];actions=[];lateFrames=0;
+    display=initialDisplay();activeDisplay=initialDisplay();touches=[];saves=[];actions=[];lateFrames=0;audioRoute='browser';
     const context=await browser.newContext({viewport:{width:scenario.width,height:scenario.height},locale:scenario.lang,
       deviceScaleFactor:scenario.deviceScaleFactor || 1});
     await context.addInitScript(installFixture,{cjk:Boolean(cjkFont)});
@@ -488,6 +621,9 @@ try {
       rendererOnlyKeepsMedia:true,focusTrap:true});
     report.checks.at(-1).clientDiagnostics={httpStatusAndClearReason:true,blurDoesNotCloseMedia:true};
     report.checks.at(-1).presentationChecks=presentationChecks;
+    report.checks.at(-1).bluetoothAudio=await verifyBluetoothAudio(page,scenario);
+    report.checks.at(-1).mediaControls=await verifyMediaControls(page,scenario);
+    assert.deepEqual(errors,[]);
     await context.close();
   }
   report.result='passed';

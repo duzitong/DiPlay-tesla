@@ -19,6 +19,7 @@ import android.widget.TextView
 import com.diplay.browser.*
 import com.diplay.browser.rtc.BrowserVideoOutput
 import com.shilapi.xcertplay.AppLocale
+import com.shilapi.xcertplay.AirPlayPersistence
 import com.shilapi.xcertplay.CarPlayOutput
 import com.shilapi.xcertplay.CarPlayOutputExtension
 import com.shilapi.xcertplay.NavigationAudioSettings
@@ -60,6 +61,7 @@ class TeslaBrowserOutput(private val context: Context) : CarPlayOutputExtension,
         BrowserDisplayJson.decode(JSONObject(prefs.getString("display", "")!!))
     }.getOrDefault(BrowserDisplay())
     @Volatile private var negotiated: BrowserDisplay? = null
+    @Volatile private var negotiatedBluetoothAudio: Boolean? = null
     @Volatile private var controller: CarPlayController? = null
     @Volatile private var reconnect: (() -> Unit)? = null
     @Volatile private var error: String? = null
@@ -91,10 +93,15 @@ class TeslaBrowserOutput(private val context: Context) : CarPlayOutputExtension,
         val selected = display
         negotiated = selected
         val size = selected.resolution
+        val carBluetoothAudio = config.disableAudioOutput
+        negotiatedBluetoothAudio = carBluetoothAudio
         history.append("CarPlay requested video=${if (config.hevc) "HEVC-allowed" else "H264"} " +
-            "canvas=${size.width}x${size.height} fps=${selected.fps}")
+            "canvas=${size.width}x${size.height} fps=${selected.fps} " +
+            "audio=${if (carBluetoothAudio) "iphone-bluetooth" else "carplay"}")
         // Encoded AVC/HEVC is relayed without using an Android video codec. Keep the owner's preference.
         return config.copy(deviceName = "DiPlay Tesla", model = "Tesla Browser", cluster = null,
+            externalMainAudio = !carBluetoothAudio,
+            microphone = config.microphone && !carBluetoothAudio,
             main = AirPlayDisplayConfig(size.width, size.height,
                 widthPhysicalMm = 220, heightPhysicalMm = (220.0 * size.height / size.width).toInt(), fps = selected.fps))
     }
@@ -119,6 +126,7 @@ class TeslaBrowserOutput(private val context: Context) : CarPlayOutputExtension,
         decoder = null
         media.video(null)
         negotiated = null
+        negotiatedBluetoothAudio = null
         frames.clear()
         stage = context.getString(R.string.settings_browser_waiting)
     }
@@ -139,16 +147,20 @@ class TeslaBrowserOutput(private val context: Context) : CarPlayOutputExtension,
     override fun touch(contacts: List<AirPlayContact>): Boolean = controller?.sendTouch(contacts) == true
     override fun action(name: String): Boolean {
         val current = controller ?: return false
-        return when (name) {
+        val accepted = when (name) {
             "home" -> current.sendKnob(AirPlayKnobState(home = true))
             "back" -> current.sendKnob(AirPlayKnobState(back = true))
             "siri" -> current.requestSiri()
             "play" -> current.sendMediaButton(CarPlayMediaButton.PLAY_PAUSE)
+            "resume" -> current.sendMediaButton(CarPlayMediaButton.PLAY)
+            "pause" -> current.sendMediaButton(CarPlayMediaButton.PAUSE)
             "next" -> current.sendMediaButton(CarPlayMediaButton.NEXT)
             "previous" -> current.sendMediaButton(CarPlayMediaButton.PREVIOUS)
             "reconnect" -> reconnect?.let { handler.post { it() }; true } ?: false
             else -> false
         }
+        history.append("Browser action action=$name accepted=$accepted")
+        return accepted
     }
     @Synchronized override fun saveDisplay(display: BrowserDisplay) {
         if (this.display == display) return // Returning to the same settings must not prompt a reconnect.
@@ -166,7 +178,8 @@ class TeslaBrowserOutput(private val context: Context) : CarPlayOutputExtension,
         .put("display", BrowserDisplayJson.encode(display))
         .put("activeDisplay", negotiated?.let(BrowserDisplayJson::encode) ?: JSONObject.NULL)
         .put("pendingReconnect", negotiated != null && negotiated != display)
-        .put("audio", if (media.audio.active) "browser" else "android")
+        .put("audio", if (negotiatedBluetoothAudio ?: AirPlayPersistence.loadCarBluetoothAudio(context)) "bluetooth"
+            else if (media.audio.active) "browser" else "android")
         .put("transport", media.transport)
         .put("videoCodec", media.videoCodec ?: JSONObject.NULL)
         .put("device", diagnostics.snapshot() ?: JSONObject.NULL)

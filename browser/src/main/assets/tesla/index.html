@@ -30,10 +30,10 @@
       </div>
       <div class="audioVolume">
         <label for="navigationVolume" data-i18n="navigationVolume">导航音量</label><output id="navigationVolumeValue" for="navigationVolume" dir="ltr">100%</output>
-        <input id="navigationVolume" type="range" min="0" max="100" step="1" value="100" aria-describedby="volumeHint">
+        <input id="navigationVolume" type="range" min="0" max="300" step="1" value="100" aria-describedby="volumeHint">
       </div>
     </div>
-    <p id="volumeHint" data-i18n="volumeHint">立即生效，并在此浏览器保存。100% 保留原音量，0% 静音。</p>
+    <p id="volumeHint" data-i18n="volumeHint">立即生效，并在此浏览器保存。导航可调 0–300%：100% 为原始音量，300% 为原始导航振幅的 3 倍（约 +9.5 dB），0% 静音，无额外基础增益。高增益可能失真，请从 100% 逐步调高。音乐和蓝牙音量不变。</p>
     <details id="audioAdvanced"><summary data-i18n="advancedAudio">高级音频</summary>
     <section class="navigationVolume" aria-labelledby="navigationTitle">
       <div class="navigationHeading"><label id="navigationTitle" for="navigationLevel" data-i18n="hostNavigationVolume">主机导航音量</label><output id="navigationValue" for="navigationLevel" dir="ltr">—</output></div>
@@ -46,8 +46,8 @@
       <p id="navigationState" role="status" aria-live="polite"></p>
     </section>
     <label class="audioBuffer"><span data-i18n="buffer">音频缓冲</span><select id="audioBuffer"><option value="80">80 ms</option><option value="200" selected>200 ms</option><option value="400">400 ms</option></select></label>
-    <p data-i18n="audioScope">浏览器音量进一步调低主机输出，不会自动压低音乐；旧版主机未标记的声音保持原音量。</p>
-    <p data-i18n="audio">网页音频用于音乐与导航；通话、Siri 语音和麦克风目前由 Android 主机处理。</p>
+    <p data-i18n="audioScope">浏览器独立调节音乐与导航，不会自动压低音乐；旧版主机未标记的声音保持原音量。</p>
+    <p data-i18n="audio">在 Android 高级设置开启“通过车辆蓝牙播放 CarPlay 音频”后，音乐、导航、Siri 和通话全部由 iPhone 直接输出，网页只显示画面和接收触控；修改会重新连接 CarPlay。请将 iPhone 与车机配对，并在手机选择车机蓝牙音源；DiPlay 不转发蓝牙。关闭此项后可恢复网页音频。</p>
     </details>
     </section>
     <div class="menuActions">
@@ -81,9 +81,13 @@
     <button data-action="back" data-i18n="back">返回</button>
     <button data-action="siri">Siri</button>
     <button data-action="previous" data-i18n="previous">上一曲</button>
-    <button data-action="play" data-i18n="play">播放 / 暂停</button>
+    <button data-action="resume" data-i18n="resume">播放</button>
+    <button data-action="pause" data-i18n="pause">暂停</button>
     <button data-action="next" data-i18n="next">下一曲</button>
+    <button id="navigationVolumeDown" data-i18n="navigationVolumeDown" aria-describedby="volumeHint">导航 −</button>
+    <button id="navigationVolumeUp" data-i18n="navigationVolumeUp" aria-describedby="volumeHint">导航 ＋</button>
     <button id="hideKeys" data-i18n="hideKeys">隐藏按键</button>
+    <p id="mediaCommandStatus" role="status" aria-live="polite" hidden></p>
   </footer>
   <section id="displayPanel" class="overlay" role="dialog" aria-modal="true" aria-labelledby="displayTitle" hidden>
     <form id="displayForm" class="panel">

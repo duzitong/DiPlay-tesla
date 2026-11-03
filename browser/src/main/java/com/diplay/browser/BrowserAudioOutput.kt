@@ -9,6 +9,7 @@ import java.nio.ByteOrder
 
 /** Independent PCM transport. A fresh browser readiness lease is required for every block. */
 class BrowserAudioOutput(private val clock: () -> Long = System::nanoTime) : RemotePcmOutput {
+    internal var diagnostic: (String) -> Unit = {}
     private val lock = Any()
     private var owner: Any? = null
     private var send: ((ByteArray, Long) -> Boolean)? = null
@@ -36,12 +37,15 @@ class BrowserAudioOutput(private val clock: () -> Long = System::nanoTime) : Rem
     override fun offer(id: AudioStreamId, format: AudioFormat, pcm: ByteArray, offset: Int, length: Int): Boolean = synchronized(lock) {
         if (!active || format.audioType !in PLAYBACK_TYPES || format.channels !in 1..2 || format.sampleRate !in 8000..96000) return false
         if (offset < 0 || length <= 0 || length > 65516 || offset > pcm.size - length || length % (format.channels * 2) != 0) return false
-        val stream = streams.getOrPut(id) { nextStream++ }
         val number = sequence++ and 0xffff_ffffL
         val role = when (format.audioType) {
             "media" -> ROLE_MUSIC
             "default", "alert", "compatibility" -> ROLE_GUIDANCE
             else -> ROLE_LEGACY_UNKNOWN
+        }
+        val stream = streams.getOrPut(id) {
+            diagnostic("Browser PCM offer type=${format.audioType} role=$role rate=${format.sampleRate} channels=${format.channels}")
+            nextStream++
         }
         val packet = ByteBuffer.allocate(HEADER_BYTES + length).order(ByteOrder.LITTLE_ENDIAN)
             .putInt(0x31415057).putInt(stream).putInt(format.sampleRate).putShort(format.channels.toShort()).putShort(role.toShort())

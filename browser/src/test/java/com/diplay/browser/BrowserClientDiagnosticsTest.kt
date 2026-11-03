@@ -42,4 +42,17 @@ class BrowserClientDiagnosticsTest {
             assertThrows(IllegalArgumentException::class.java) { BrowserClientDiagnostics.lines(invalid) }
         }
     }
+    @Test fun savedAudioSnapshotRetainsIndependentVolumesAndGainWithoutPrivatePayloads() {
+        val data = JSONObject().put("navigationVolume", 33).put("navigationGain", 0.99)
+            .put("musicVolume", 100).put("musicGain", 1)
+        val lines = BrowserClientDiagnostics.lines(body(data))
+        val saved = JSONObject(lines.single().substringAfter(" data="))
+        assertEquals(0.99, saved.getDouble("navigationGain"), 0.0)
+        assertEquals(33, saved.getInt("navigationVolume"))
+        assertEquals(1, saved.getInt("musicGain"))
+        assertEquals(100, saved.getInt("musicVolume"))
+        assertThrows(IllegalArgumentException::class.java) {
+            BrowserClientDiagnostics.lines(body(data.put("pcm", "private")))
+        }
+    }
 }

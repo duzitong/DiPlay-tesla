@@ -374,8 +374,9 @@ class AirPlaySession(
         sendHidReport(AirPlayHid.KNOB_HID_UID, AirPlayHid.knobReport(AirPlayKnobState(select = down)))
 
     fun sendMedia(index: Int) {
-        sendHidReport(AirPlayHid.MEDIA_HID_UID, AirPlayHid.mediaReport(index))
-        sendHidReport(AirPlayHid.MEDIA_HID_UID, AirPlayHid.mediaReport(0))
+        val pressed = sendHidReport(AirPlayHid.MEDIA_HID_UID, AirPlayHid.mediaReport(index))
+        val released = sendHidReport(AirPlayHid.MEDIA_HID_UID, AirPlayHid.mediaReport(0))
+        debugLog("airplay media key index=$index pressWritten=$pressed releaseWritten=$released")
     }
 
     fun sendTelephony(index: Int) {
@@ -609,12 +610,12 @@ class AirPlaySession(
                     }
                     debugLog("airplay /info request=$requestInfo")
                 }
-                Log.i(
-                    TAG,
-                    "airplay /info features=${info["features"]} " +
-                        "audioFormats=${(info["audioFormats"] as? List<*>)?.size ?: 0} " +
-                        "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0}",
-                )
+                val audioCapabilities = "airplay /info features=${info["features"]} " +
+                    "audioFormats=${(info["audioFormats"] as? List<*>)?.size ?: 0} " +
+                    "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0} " +
+                    "microphone=${config.microphone} audioDisabled=${config.disableAudioOutput} externalMainAudio=${config.externalMainAudio}"
+                Log.i(TAG, audioCapabilities)
+                debugLog(audioCapabilities)
                 debugLog(
                     "airplay /info videoInCar=${config.videoInCar} " +
                         "videoPlaybackAllowed=${if (config.videoInCar) VideoInCar.allowed else "not-offered"}",
@@ -736,9 +737,11 @@ class AirPlaySession(
                     }
                 }
                 STREAM_TYPE_MAIN_AUDIO, STREAM_TYPE_ALT_AUDIO, STREAM_TYPE_MAIN_HIGH_AUDIO -> {
-                    val streamResponse = media.onAudio(this, type, stream)
+                    val allowed = config.acceptsAudioOutput(type, stream["audioType"] as? String)
+                    val streamResponse = if (allowed) media.onAudio(this, type, stream) else null
                     debugLog(
-                        "airplay audio stream type=$type accepted=${streamResponse != null} " +
+                        "airplay audio stream type=$type audioType=${stream["audioType"] ?: "unspecified"} " +
+                            "allowed=$allowed accepted=${streamResponse != null} " +
                             "dataPort=${streamResponse?.get("dataPort") ?: "none"} " +
                             "controlPort=${streamResponse?.get("controlPort") ?: "none"}",
                     )
@@ -782,6 +785,9 @@ class AirPlaySession(
         val type = string(body["type"])
         val params = asMap(body["params"]) ?: emptyMap()
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
+        if (type == "modesChanged") {
+            debugLog("airplay modesChanged resources=${params["resources"]}")
+        }
         val streamId = request.headers["x-apple-streamid"]?.toLongOrNull()
         val data = params["data"] as? ByteArray
         if (streamId != null && data != null) {
