@@ -17,6 +17,24 @@ import java.util.concurrent.atomic.AtomicLong
 
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[29])
 class BrowserVideoOutputTest {
+    @Test fun selectingWebCodecsStopsJpegFrameForwardingBeforeTheRtcWorkerRuns() {
+        val jpegFrames = AtomicInteger()
+        val peers = AtomicInteger()
+        val output = BrowserVideoOutput(object : MediaSink {
+            override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
+                jpegFrames.incrementAndGet()
+            }
+        }, {}, peerFactory = { peers.incrementAndGet(); error("WebCodecs must not create a native peer") })
+        try {
+            output.attachWebCodecs()
+            output.onVideoConfig(110, byteArrayOf(1,0x42,0,0x1f,-1,-31,0,4,0x67,0x42,0,0x1f,1,0,2,0x68,0))
+            output.onVideoFrame(110, byteArrayOf(0, 0, 0, 1, 0x65, 1))
+            assertEquals("webcodecs", output.transport)
+            assertEquals(0, jpegFrames.get())
+            assertEquals(0, peers.get())
+        } finally { output.close() }
+    }
+
     @Test fun hevcIsRelayedWithoutTouchingTheAndroidJpegDecoderAndDropsRaslAfterCra() {
         val jpegCalls = AtomicInteger()
         val offers = LinkedBlockingQueue<JSONObject>()

@@ -23,6 +23,30 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class) @Config(sdk = [29])
 class BrowserMediaSocketTest {
+    @Test fun videoLeaseIsRevokedWithItsMediaOwnerAndCannotBeReusedByTheNextViewer() {
+        val hub = BrowserMediaHub()
+        val owner = Any()
+        val video = Any()
+        var stops = 0
+        assertTrue(hub.attach(owner, false, { true }, { _, _ -> true }, webcodecs = true))
+        val lease = hub.videoSession(owner)!!
+        assertNull(hub.videoSession(Any()))
+        assertTrue(hub.attachVideo(video, lease, { true }, { true }, { stops++ }))
+        hub.command(owner, JSONObject().put("type", "audio-ready").put("playback", true))
+        hub.resetAudio(owner)
+        hub.detach(Any())
+        assertEquals(0, stops)
+        hub.detach(owner)
+        assertEquals(1, stops)
+        val next = Any()
+        assertTrue(hub.attach(next, false, { true }, { _, _ -> true }, webcodecs = true))
+        assertFalse(hub.attachVideo(video, lease, { true }, { true }, { stops++ }))
+        assertTrue(hub.attachVideo(video, hub.videoSession(next)!!, { true }, { true }, { stops++ }))
+        hub.detachVideo(video)
+        assertTrue(hub.viewerAttached)
+        hub.detach(next)
+    }
+
     @Test fun aSecondPageWaitsWithoutStealingMediaAndJoinsWhenTheOwnerLeaves() {
         val port = ServerSocket(0).use { it.localPort }
         val token = "1234567890abcdef1234567890abcdef"
@@ -116,9 +140,9 @@ class BrowserMediaSocketTest {
         }
         val server = BrowserServer(port, RuntimeEnvironment.getApplication().assets, token, LatestFrame(), target, media)
         server.start(2000, true)
-        fun connect(origin: String): Pair<Socket, Int> {
+        fun connect(origin: String, path: String = "/api/media"): Pair<Socket, Int> {
             val socket = Socket("127.0.0.1", port).apply { soTimeout = 2000 }
-            socket.getOutputStream().write(("GET /api/media HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+            socket.getOutputStream().write(("GET $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
                 "Origin: $origin\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n" +
                 "Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n").toByteArray())
             val headers = StringBuilder()
@@ -130,6 +154,12 @@ class BrowserMediaSocketTest {
         }
         try {
             connect("http://elsewhere").let { (socket, status) -> socket.use { assertEquals(403, status) } }
+            connect("http://elsewhere", "/api/video").let { (socket, status) -> socket.use { assertEquals(403, status) } }
+            connect("http://127.0.0.1:$port", "/api/video").let { (socket, status) -> socket.use {
+                assertEquals(101, status)
+                send(it, """{"type":"hello","token":"$token","session":"no-owner"}""")
+                assertEquals(-1, it.getInputStream().read())
+            } }
             connect("http://127.0.0.1:$port").let { (socket, status) -> socket.use {
                 assertEquals(101, status)
                 send(it, """{"type":"hello","token":"wrong","rtc":false}""")
@@ -138,12 +168,36 @@ class BrowserMediaSocketTest {
             } }
             connect("http://127.0.0.1:$port").let { (socket, status) -> socket.use {
                 assertEquals(101, status)
-                send(it, """{"type":"hello","token":"$token","rtc":false}""")
-                assertEquals("welcome", JSONObject(frame(it.getInputStream()).second.toString(Charsets.UTF_8)).getString("type"))
+                send(it, """{"type":"hello","token":"$token","rtc":false,"videoMode":"webcodecs"}""")
+                val welcome = JSONObject(frame(it.getInputStream()).second.toString(Charsets.UTF_8))
+                assertEquals("welcome", welcome.getString("type"))
+                val lease = welcome.getString("videoSession")
+                connect("http://127.0.0.1:$port", "/api/video").let { (candidate, _) -> candidate.use {
+                    send(candidate, """{"type":"hello","token":"wrong","session":"$lease"}""")
+                    assertEquals(-1, candidate.getInputStream().read())
+                } }
+                connect("http://127.0.0.1:$port", "/api/video").let { (candidate, _) -> candidate.use {
+                    send(candidate, """{"type":"hello","token":"$token","session":"stale-owner"}""")
+                    assertEquals(-1, candidate.getInputStream().read())
+                } }
+                val video = connect("http://127.0.0.1:$port", "/api/video").first
+                send(video, """{"type":"hello","token":"$token","session":"$lease"}""")
+                assertEquals("video-welcome", JSONObject(frame(video.getInputStream()).second.toString(Charsets.UTF_8)).getString("type"))
+                send(video, """{"type":"ping"}""")
+                assertEquals("pong", JSONObject(frame(video.getInputStream()).second.toString(Charsets.UTF_8)).getString("type"))
+                connect("http://127.0.0.1:$port", "/api/video").let { (duplicate, _) -> duplicate.use {
+                    send(duplicate, """{"type":"hello","token":"$token","session":"$lease"}""")
+                    assertEquals(-1, duplicate.getInputStream().read())
+                } }
                 send(it, """{"type":"audio-ready","playback":true}""")
                 send(it, """{"type":"ping"}""")
                 assertEquals("pong", JSONObject(frame(it.getInputStream()).second.toString(Charsets.UTF_8)).getString("type"))
+                send(video, """{"type":"ping"}""")
+                assertEquals("Audio commands must preserve the video lease", "pong",
+                    JSONObject(frame(video.getInputStream()).second.toString(Charsets.UTF_8)).getString("type"))
                 val pcm = byteArrayOf(1, 2, 3, 4)
+                video.close()
+                assertTrue("Closing video must not reset the audio owner", media.audio.active)
                 assertTrue(media.audio.offer(AudioStreamId(100,"media"), AudioFormat(AudioCodecKind.LPCM,44100,2,100), pcm,0,pcm.size))
                 val (opcode, packet) = frame(it.getInputStream())
                 assertEquals(2, opcode)

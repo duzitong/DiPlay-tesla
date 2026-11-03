@@ -35,6 +35,8 @@ class BrowserVideoOutput internal constructor(
     @Volatile private var diagnostic: ((String) -> Unit)? = null
     private val rendered = AtomicBoolean()
     private val lastRecovery = AtomicLong(Long.MIN_VALUE)
+    internal val h264 = H264VideoOutput({ requestKey() }, { log(it); reportDiagnostic(it) }, clock)
+    @Volatile private var webcodecs = false
     private var config: ByteArray? = null
     private var latestConfig: ByteArray? = null
     private var sourceConfig: RtcVideoConfig? = null
@@ -62,6 +64,7 @@ class BrowserVideoOutput internal constructor(
     private var lastSourceLog = Long.MIN_VALUE
     private fun log(message: String) { runCatching { eventLogger(message) } }
     val transport get() = when {
+        webcodecs -> "webcodecs"
         displayed -> "webrtc"
         enabled || codec == VideoCodec.H265 -> "waiting"
         else -> "jpeg"
@@ -72,9 +75,15 @@ class BrowserVideoOutput internal constructor(
     }
     fun attach(rtc: Boolean, send: (JSONObject) -> Boolean) = attach(rtc, RtcRecoveryPolicy.BALANCED.graceMs, send)
     fun attach(rtc: Boolean, recoveryGraceMs: Long, send: (JSONObject) -> Boolean) = execute {
+        webcodecs = false; h264.detach()
         stop(cause = "viewer-attach"); reply = send; enabled = rtc
         recoveryPolicy = RtcRecoveryPolicy.fromMillis(recoveryGraceMs)
         start()
+    }
+    fun attachWebCodecs() {
+        webcodecs = true
+        (jpeg as? JpegVideoSink)?.setSuspended(true)
+        execute { stop(cause = "webcodecs-attach"); enabled = false; reply = null }
     }
     fun command(data: JSONObject) = execute {
         if (data.optLong("id", -1) != id) return@execute
@@ -102,7 +111,7 @@ class BrowserVideoOutput internal constructor(
                 ?: "browser-fallback", data.optBoolean("retryable", true))
         }
     }
-    fun detach() = execute { enabled = false; reply = null; stop(cause = "viewer-detach") }
+    fun detach() = execute { webcodecs = false; h264.detach(); enabled = false; reply = null; stop(cause = "viewer-detach") }
     override fun setVideoRecoveryHandler(type: Int, handler: () -> Unit) {
         jpeg.setVideoRecoveryHandler(type, handler)
         if (type == MAIN_SCREEN) recovery = handler
@@ -118,11 +127,12 @@ class BrowserVideoOutput internal constructor(
     }
     override fun onVideoCodec(type: Int, codec: VideoCodec) {
         if (type != MAIN_SCREEN) return
+        h264.codec(codec)
         val changed = this.codec != codec
         this.codec = codec
         codecName = codec.name
         if (changed) log("Video source codec=${codec.name} changed=true")
-        (jpeg as? JpegVideoSink)?.setSuspended(codec != VideoCodec.H264 || displayed)
+        (jpeg as? JpegVideoSink)?.setSuspended(webcodecs || codec != VideoCodec.H264 || displayed)
         if (codec == VideoCodec.H264) jpeg.onVideoCodec(type, codec)
         if (changed) {
             connected = false
@@ -133,6 +143,7 @@ class BrowserVideoOutput internal constructor(
     override fun onVideoConfig(type: Int, codecData: ByteArray) {
         if (codec == VideoCodec.H264) jpeg.onVideoConfig(type, codecData)
         if (type != MAIN_SCREEN) return
+        h264.config(codecData)
         val bytes = codecData.copyOf()
         val sourceCodec = codec
         val next: RtcVideoConfig?
@@ -181,6 +192,7 @@ class BrowserVideoOutput internal constructor(
     override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
         if (type != MAIN_SCREEN || closed) return
         receivedFrames++
+        if (webcodecs) { h264.frame(naluBytes, senderNanos); return }
         if (!displayed && codec == VideoCodec.H264) jpeg.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos)
         if (!connected) return
         val frame = RtcAccessUnit.inspect(naluBytes, codec) ?: return
@@ -206,6 +218,7 @@ class BrowserVideoOutput internal constructor(
         if (type == MAIN_SCREEN) log("Video source active=$active")
         if (type == MAIN_SCREEN && !active) invalidateConfig()
         if (type == MAIN_SCREEN && !active) diagnostic = null
+        if (type == MAIN_SCREEN && !active) h264.config(null)
         jpeg.onScreenStreamActive(type, active)
         if (type == MAIN_SCREEN && !active) execute { stop(cause = "screen-stream-inactive"); config = null }
     }
@@ -326,7 +339,7 @@ class BrowserVideoOutput internal constructor(
         val hadAttempt = retry.inFlight
         if (reason == null) retry.reset() else retry.finish(retryable)
         displayed = false; connected = false; health = null
-        (jpeg as? JpegVideoSink)?.setSuspended(codec != VideoCodec.H264)
+        (jpeg as? JpegVideoSink)?.setSuspended(webcodecs || codec != VideoCodec.H264)
         val old = peer; peer = null; peerConfig = null
         if (old != null || reason != null) log("RTC attempt=$id stopped reason=${reason ?: "session-change"} cause=$cause retryable=$retryable " +
             "received=$receivedFrames sent=$sentFrames sendFailures=$sendFailures displayed=$wasDisplaying")
@@ -344,6 +357,7 @@ class BrowserVideoOutput internal constructor(
         closed = true; displayed = false
         worker.execute { stop(cause = "output-close") }
         worker.shutdown()
+        h264.close()
         closeJpeg()
     }
     companion object {

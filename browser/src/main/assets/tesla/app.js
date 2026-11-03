@@ -57,6 +57,10 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     buffer:['音频缓冲','Audio buffer'], transport:['视频传输','Video transport'], auto:['WebRTC（不自动回退 JPEG）','WebRTC (no automatic JPEG fallback)'],
     musicVolume:['音乐音量','Music volume'],navigationVolume:['导航音量','Navigation volume'],
     volumeHint:['立即生效，并在此浏览器保存。100% 保留原音量，0% 静音。','Applies immediately and saves in this browser. 100% keeps the original level; 0% mutes.'],
+    webcodecs:['H.264 / WebCodecs（实验性）','H.264 / WebCodecs (experimental)'],
+    webcodecsHint:['WebCodecs 需要受信任的 HTTPS 和浏览器 H.264 解码支持；失败时请手动切回其他传输。只重建浏览器媒体连接，不重连 iPhone。','WebCodecs requires trusted HTTPS and browser H.264 decoding. Switch transport manually if it fails. Restarts browser media only, not the iPhone connection.'],
+    webcodecsWaiting:['正在等待 WebCodecs 视频。','Waiting for WebCodecs video.'],
+    webcodecsFailed:['WebCodecs 视频不可用，请手动切换视频传输。','WebCodecs video unavailable; switch video transport manually.'],
     audioBlocked:['请再次点按允许声音；已恢复 Android 音频。','Tap again to allow sound; Android playback restored.'],
     displayHint:['右侧与全屏尺寸独立保存，下次连接生效。','Right and full sizes are saved independently for the next connection.'],
     transportHint:['视频传输在保存后立即切换。','Video transport switches immediately after saving.'],
@@ -86,6 +90,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     jpegDiagnostics:'JPEG (تشخيص يدوي)',
     browserSurface:'متصفح Tesla',sound:'الصوت',advancedAudio:'إعدادات الصوت المتقدمة',
     audioScope:'يخفض مستوى صوت المتصفح خرج المضيف دون خفض الموسيقى تلقائيًا. يحتفظ الصوت غير المصنّف من المضيف القديم بمستواه الأصلي.',
+    webcodecs:'H.264 / WebCodecs (تجريبي)',webcodecsHint:'يتطلب WebCodecs اتصال HTTPS موثوقًا ودعم فك ترميز H.264. غيّر النقل يدويًا عند الفشل. يُعاد اتصال وسائط المتصفح فقط، دون إعادة اتصال iPhone.',webcodecsWaiting:'بانتظار فيديو WebCodecs.',webcodecsFailed:'فيديو WebCodecs غير متاح؛ غيّر نقل الفيديو يدويًا.',
     hostNavigationVolume:'مستوى صوت الملاحة على المضيف',navigationDown:'خفض صوت الملاحة',navigationUp:'رفع صوت الملاحة',navigationHint:'يخفض إرشادات الملاحة فقط دون تغيير الموسيقى. \u20660 dB\u2069 هو المستوى الأصلي. يُطبّق فورًا ويستخدم إعداد Android نفسه.',
     navigationLoading:'ستُقرأ القيمة المحفوظة بعد الاتصال',navigationSaving:'جارٍ الحفظ…',navigationSaved:'تم الحفظ · يُطبّق فورًا',navigationConflict:'تغيّر المستوى في مكان آخر. تظهر أحدث قيمة؛ اضبطه مجددًا.',navigationFailed:'لم يُؤكّد الحفظ؛ تجري قراءة المستوى مجددًا.',navigationRecovered:'قُرئ المستوى الحالي؛ يمكنك ضبطه مجددًا.',
     actualTransport:'الفيديو الفعلي',waitingVideo:'بانتظار الفيديو',measured:'معدل عرض الفيديو المقاس',jpegSelected:'اختير JPEG يدويًا. اختر الوضع التلقائي في إعدادات العرض لتجربة WebRTC.',rtcUnavailable:'WebRTC غير متاح في هذا المتصفح. لم يتم تشغيل JPEG تلقائيًا.',rtcWaiting:'بانتظار فيديو WebRTC. يظهر المسار عند وصول الإطارات.',rtcFallback:'WebRTC غير متاح حاليًا؛ بانتظار استعادة اتصال الوسائط.',rtcRetry:'ستُعاد محاولة WebRTC دون تشغيل JPEG تلقائيًا.',rtcBlocked:'أبلغ المتصفح عن اتصال فيديو غير مدعوم. تحقّق من البرنامج الثابت وإعدادات العرض.',
@@ -161,8 +166,9 @@ import {createClientDiagnostics} from './client-diagnostics.js';
   $('keysButton').addEventListener('click',()=>{ showKeys($('virtualKeys').hidden); closeMenu(); });
   $('hideKeys').addEventListener('click',()=>{ showKeys(false); $('menuButton').focus(); });
   let hevcErrorAnnounced=false;
-  const media = createMedia({video,getToken:()=>token,onDiagnostic:diagnostics.record,
+  const media = createMedia({video,canvas,getToken:()=>token,onDiagnostic:diagnostics.record,
     onTransport:mode=>{
+      if(mode===videoTransport && mode==='webcodecs')return;
       if(mode!==videoTransport){jpegMetrics.reset();sequence=-1;}
       videoTransport=mode;renderer.setActive(mode==='webrtc');releaseTouches();
     },
@@ -290,15 +296,18 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     const audio=media.audio.stats();
     const jpeg=jpegMetrics.sample();
     const presentation=renderer.samplePresentation();
+    const web=media.mode==='webcodecs';
     diagnostics.sample({
       decodedFrames:videoMetrics.decodedFrames??null,decodedFps:videoMetrics.decodedFps??null,
-      presentedFrames:presentation.presentedFrames,presentedFps:presentation.presentedFps,
+      presentedFrames:web?videoMetrics.paintedFrames??null:presentation.presentedFrames,
+      presentedFps:web?videoMetrics.presentedFps??null:presentation.presentedFps,
       callbackAgeMs:presentation.callbackAgeMs,callbackPendingMs:presentation.callbackPendingMs,
       submittedFrameAgeMs:presentation.submittedFrameAgeMs,streamActive:presentation.streamActive,
       sent:videoMetrics.sent??null,received:videoMetrics.received??null,
       expiredFrames:videoMetrics.expiredFrames??null,overflowFrames:videoMetrics.overflowFrames??null,
       keyframeSkips:videoMetrics.keyframeSkips??null,sendFailures:videoMetrics.sendFailures??null,
-      recovering:videoMetrics.recovering??false,fallbackReason:videoMetrics.fallbackReason??null,
+      recovering:videoMetrics.recovering??false,
+      fallbackReason:web?videoMetrics.webcodecsError?.split(':')[0]??null:videoMetrics.fallbackReason??null,
     },{enabled:audio.enabled,contextState:audio.contextState,engine:audio.engine,queuedMs:audio.queuedMs,
       underruns:audio.underruns,overruns:audio.overruns,targetMs:audio.targetMs,packets:audio.packets??null,
       maxArrivalGapMs:audio.maxArrivalGapMs??null,musicMaxGapMs:audio.musicMaxGapMs??null,
@@ -307,14 +316,14 @@ import {createClientDiagnostics} from './client-diagnostics.js';
       navigationUnderruns:audio.navigationUnderruns});
     const connected=Boolean(statusAvailable && state.connected && token && !document.hidden);
     const jpegSelected=!media.busy && media.mode==='jpeg' && state.videoCodec!=='H265';
-    const fps=connected?(media.displayed?videoMetrics.decodedFps:jpegSelected?jpeg.fps:null):null;
+    const fps=connected?(media.displayed?(web?videoMetrics.presentedFps:videoMetrics.decodedFps):jpegSelected?jpeg.fps:null):null;
     const device=state.device, fresh=device && device.ageMs>=0 && device.ageMs<=6000;
     const unknown=t('unknown'), stale=t('stale'), rows=[];
     const add=(name,value,metric)=>rows.push([name,String(value),metric]);
-    const width=connected?(media.displayed?video.videoWidth:jpegSelected?jpeg.width:0):0;
-    const height=connected?(media.displayed?video.videoHeight:jpegSelected?jpeg.height:0):0;
+    const width=connected?(media.displayed?(web?canvas.width:video.videoWidth):jpegSelected?jpeg.width:0):0;
+    const height=connected?(media.displayed?(web?canvas.height:video.videoHeight):jpegSelected?jpeg.height:0):0;
     const codec=state.videoCodec==='H265'?'HEVC':state.videoCodec==='H264'?'H.264':null;
-    const route=connected && width>0?(media.displayed?(codec?codec+' / WebRTC':'WebRTC'):'JPEG'):t('waitingVideo');
+    const route=connected && width>0?(media.displayed?(web?'H.264 / WebCodecs':codec?codec+' / WebRTC':'WebRTC'):'JPEG'):t('waitingVideo');
     $('transportStatus').replaceChildren(...[t('actualTransport'),...streamSummary({transport:route,width,height,fps,device},{stale,unknown})].flatMap((part,index)=>{
       const span=document.createElement('span');span.dir=/^(?:H\.264|HEVC|JPEG|SoC|\d)/.test(part)?'ltr':'auto';span.textContent=part;
       return index?[document.createTextNode(' · '),span]:[span];
@@ -324,6 +333,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     let explanation='';
     if(media.busy)explanation=t('mediaBusy');
     else if(!connected)explanation=t(statusAvailable && token?'waiting':'disconnected');
+    else if(web)explanation=videoMetrics.webcodecsError?t('webcodecsFailed')+' ('+videoMetrics.webcodecsError+')':media.displayed?'':t('webcodecsWaiting');
     else if(!media.displayed) {
       if(media.mode==='jpeg')explanation=t(state.videoCodec==='H265'?'jpegHevcUnsupported':'jpegSelected');
       else if(reason==='hevc-unsupported')explanation=t('hevcUnsupported');
@@ -336,7 +346,8 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     // Sampling and the stream summary above must keep running while the list is hidden.
     if(!$('diagnostics').open || $('menuPanel').hidden)return;
     add(t('resolution'),width && height?`${width} × ${height}`:unknown);
-    add(t(media.displayed?'decoded':'measured'),Number.isFinite(fps) && fps>=0?fps.toFixed(1)+' fps':unknown);
+    add(t(media.displayed && !web?'decoded':'measured'),Number.isFinite(fps) && fps>=0?fps.toFixed(1)+' fps':unknown);
+    if(web)add(t('decoded'),Number.isFinite(videoMetrics.decodedFps)?videoMetrics.decodedFps.toFixed(1)+' fps':unknown);
     add(t('dropped'),videoMetrics.dropped??unknown);
     if(Number.isFinite(videoMetrics.queueFrames))add(t('videoQueue'),`${videoMetrics.queueFrames} / ${Math.round(videoMetrics.queueBytes/1024)} KiB`);
     if(Number.isFinite(videoMetrics.queueBudgetMs))add(t('queueBudget'),videoMetrics.queueBudgetMs+' ms');
@@ -368,8 +379,9 @@ import {createClientDiagnostics} from './client-diagnostics.js';
       const seconds=value=>Number.isFinite(value)?value.toFixed(3)+' s':unknown;
       metric('renderer',t(renderer.mode==='canvas'?'canvasRenderer':'nativeRenderer'));
       metric('decodedFrames',videoMetrics.decodedFrames??unknown);
-      metric('presentedFps',Number.isFinite(presentation.presentedFps)?presentation.presentedFps.toFixed(1)+' fps':unknown);
-      metric('presentedFrames',presentation.presentedFrames??unknown);
+      const presentedFps=web?videoMetrics.presentedFps:presentation.presentedFps;
+      metric('presentedFps',Number.isFinite(presentedFps)?presentedFps.toFixed(1)+' fps':unknown);
+      metric('presentedFrames',web?videoMetrics.paintedFrames??unknown:presentation.presentedFrames??unknown);
       metric('callbackAge',milliseconds(presentation.callbackAgeMs));
       metric('submittedFrameAge',milliseconds(presentation.submittedFrameAgeMs));
       metric('callbackPending',milliseconds(presentation.callbackPendingMs));
@@ -430,7 +442,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
   }
   function normalizedPoint(x,y) {
     const picture=renderer.surface;
-    const box = picture.getBoundingClientRect(), sourceWidth=media.displayed?video.videoWidth:canvas.width,sourceHeight=media.displayed?video.videoHeight:canvas.height;
+    const box = picture.getBoundingClientRect(), native=media.displayed && media.mode!=='webcodecs',sourceWidth=native?video.videoWidth:canvas.width,sourceHeight=native?video.videoHeight:canvas.height;
     const scale = Math.min(box.width/sourceWidth,box.height/sourceHeight);
     const width = sourceWidth*scale, height = sourceHeight*scale;
     const left = box.left+(box.width-width)/2, top = box.top+(box.height-height)/2;

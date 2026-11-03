@@ -176,6 +176,22 @@ test('blocked browser storage keeps validated preferences in the active page',as
   } finally { await f.dispose(); }
 });
 
+test('WebCodecs preference persists and advertises no WebRTC without gating manual JPEG',async()=>{
+  const f=fixture();
+  try {
+    f.media.configureVideo('webcodecs');f.sockets.at(-1).open();
+    const hello=f.messages('hello').at(-1);
+    assert.equal(hello.videoMode,'webcodecs');assert.equal(hello.rtc,false);
+    assert.equal(f.storage.get('diplay-video'),'webcodecs');
+    await f.offer();assert.equal(f.peers.length,0);
+    f.sockets.at(-1).message({type:'welcome',videoSession:'owned-video'});
+    assert.equal(f.stats().webcodecsError,'secure-https-required');
+    assert.equal(f.sockets.length,2,'unsupported decoding must not start fallback sockets');
+    f.media.useVideo('jpeg');f.sockets.at(-1).open();
+    assert.equal(f.messages('hello').at(-1).videoMode,'jpeg');
+  } finally {await f.dispose();}
+});
+
 test('short WebRTC disconnects retain the last frame and resume without touching browser audio',async()=>{
   const f=fixture();
   try {

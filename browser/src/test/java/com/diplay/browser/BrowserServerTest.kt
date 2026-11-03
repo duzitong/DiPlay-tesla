@@ -17,7 +17,9 @@ class BrowserServerTest {
     @Test fun authenticatedBrowserCanControlWhileInvalidRequestsAndCrossOriginsAreRejected() {
         val port = ServerSocket(0).use { it.localPort }
         val token = "1234567890abcdef1234567890abcdef"
-        val frames = LatestFrame()
+        var frameClock = 0L
+        val frames = LatestFrame { frameClock }
+        val media = BrowserMediaHub()
         var selected = BrowserDisplay()
         var touches = 0
         var navigationLevel = -10
@@ -42,7 +44,7 @@ class BrowserServerTest {
         val pairing = BrowserPairing(nextCode = { 123456 })
         pairing.begin()
         val server = BrowserServer(port, RuntimeEnvironment.getApplication().assets, token, frames, target,
-            pairing = pairing, onClientDiagnostic = { diagnosticLines.add(it) })
+            media = media, pairing = pairing, onClientDiagnostic = { diagnosticLines.add(it) })
         server.start(2000, true)
         try {
             fun request(path: String, auth: Boolean = true, body: String? = null, origin: String? = null): Pair<Int, ByteArray> {
@@ -77,7 +79,7 @@ class BrowserServerTest {
             assertTrue(String(presets.second).contains("export function displayPreset"))
             for (asset in listOf("browser-touch.js", "stream-summary.js", "rtc-renderer.js", "rtc-health.js", "media.js",
                 "navigation-volume.js", "audio-packet.js", "audio-worklet.js", "media-worker.js", "media-socket.js",
-                "client-diagnostics.js")) {
+                "client-diagnostics.js", "webcodecs-renderer.js")) {
                 assertEquals(200, request("/$asset", auth = false).first)
             }
             assertEquals(401, request("/api/status",auth = false).first)
@@ -163,6 +165,13 @@ class BrowserServerTest {
             assertEquals(200,request("/api/touch",body = """{"client":"client-one","contacts":[{"id":0,"x":0.5,"y":0.25,"down":false}]}""").first)
             assertEquals(200,request("/api/touch",body = """{"client":"client-two","contacts":[{"id":0,"x":0.5,"y":0.25,"down":true}]}""").first)
             assertEquals(200,request("/api/touch",body = """{"client":"client-two","contacts":[]}""").first)
+            val viewer = Any()
+            assertTrue(media.attach(viewer, false, { true }, { _, _ -> true }, webcodecs = true))
+            frameClock = 3_000_000_000L
+            assertFalse(frames.hasDemand())
+            assertEquals(409, request("/api/frame").first)
+            assertFalse("WebCodecs must not acquire a JPEG demand lease", frames.hasDemand())
+            media.detach(viewer)
         } finally { server.close() }
     }
 }

@@ -109,8 +109,9 @@
       <details id="manualDisplay">
       <summary data-i18n="manualDisplay">手动调整</summary>
       <label for="transport" data-i18n="transport">视频传输</label>
-      <select id="transport"><option value="auto" data-i18n="auto">WebRTC（不自动回退 JPEG）</option><option value="jpeg" data-i18n="jpegDiagnostics">JPEG（手动排障）</option></select>
+      <select id="transport"><option value="auto" data-i18n="auto">WebRTC（不自动回退 JPEG）</option><option value="jpeg" data-i18n="jpegDiagnostics">JPEG（手动排障）</option><option value="webcodecs" data-i18n="webcodecs">H.264 / WebCodecs（实验性）</option></select>
       <p data-i18n="transportHint">视频传输在保存后立即切换。</p>
+      <p data-i18n="webcodecsHint">WebCodecs 需要受信任的 HTTPS 和浏览器 H.264 解码支持；失败时请手动切回其他传输。只重建浏览器媒体连接，不重连 iPhone。</p>
       <label for="renderer" data-i18n="renderer">WebRTC 显示方式</label>
       <select id="renderer" aria-describedby="rendererHint"><option value="native" data-i18n="nativeRenderer">原生视频（默认）</option><option value="canvas" data-i18n="canvasRenderer">Canvas（实验性）</option></select>
       <p id="rendererHint" data-i18n="rendererHint">Canvas 可用于排查浏览器视频显示异常，会增加绘制开销。保存后立即应用，不重连 CarPlay。</p>

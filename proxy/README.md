@@ -34,6 +34,29 @@ that direct path, clients before 0.1.14 may fall back to gateway-forwarded JPEG.
 WebRTC negotiation/recovery never starts JPEG conversion automatically. The gateway
 does not transcode HEVC, and enabling HEVC does not add a UDP relay.
 
+**H.264 / WebCodecs (experimental)** is an opt-in video transport in browser Display
+settings, separate from WebRTC's Native/Canvas presentation setting. It forwards the
+original H.264 access units over a dedicated `/api/video` WSS connection and decodes
+them directly to canvas. Android JPEG decoding/conversion stays suspended. This
+requires trusted HTTPS and browser support for the actual H.264 configuration; HEVC
+is rejected without changing the iPhone settings. WebRTC remains the default and JPEG
+remains manual. Unsupported decoding or exhausted video recovery requires a manual
+transport switch; it does not silently fall back or reconnect CarPlay.
+
+The video socket uses the existing pairing token plus the current media owner's
+session lease. Configuration generations, keyframes and cumulative consumed-frame
+ACKs bound both queues and in-flight video to six frames / 2 MiB each. Loss of a
+predictive chain or a three-second pending-video timeout closes only the video link,
+then requests configuration and a fresh keyframe (at most three recovery retries).
+Idle sources do not trigger a decode timeout. `/api/media` PCM/signaling remains
+independent. WebCodecs does not bypass vehicle/browser restrictions; desktop
+compatibility must not be treated as proof of compatibility in a Tesla.
+
+WebCodecs diagnostics distinguish decoder outputs from successful canvas draw
+submissions. A consumed-frame ACK confirms the draw submission, not compositor
+presentation or physical display scanout. These counters do not measure
+glass-to-glass latency.
+
 ## HTTPS browser gateway (0.1.1+)
 
 The Android APK serves HTTP, starting at port 8080 and trying later ports when firmware

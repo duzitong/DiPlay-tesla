@@ -5,7 +5,8 @@ import com.shilapi.xcertplay.media.MediaCodecSupport
 import java.io.ByteArrayOutputStream
 
 /** Codec records are inspected and packetized, never decoded or transcoded on Android. */
-internal data class RtcVideoConfig(val codec: VideoCodec, val parameters: ByteArray, val fmtp: String) {
+internal data class RtcVideoConfig(val codec: VideoCodec, val parameters: ByteArray, val fmtp: String,
+    val webCodecsCodec: String? = null) {
     fun accepts(next: RtcVideoConfig): Boolean {
         if (codec != VideoCodec.H264 || next.codec != VideoCodec.H264) return false
         val offered = fmtp.substringAfter("profile-level-id=").substringBefore(';').toInt(16)
@@ -23,7 +24,7 @@ internal data class RtcVideoConfig(val codec: VideoCodec, val parameters: ByteAr
                 require(sps.size >= 4 && pps.isNotEmpty()) { "Invalid AVC parameter sets" }
                 val profile = sps.sliceArray(1..3).joinToString("") { "%02x".format(it.toInt() and 255) }
                 return RtcVideoConfig(codec, START + sps + START + pps,
-                    "profile-level-id=$profile;packetization-mode=1;level-asymmetry-allowed=1")
+                    "profile-level-id=$profile;packetization-mode=1;level-asymmetry-allowed=1", "avc1.$profile")
             }
             require(bytes.size >= 23 && bytes[0] == 1.toByte()) { "Invalid HEVC configuration" }
             var cursor = 23

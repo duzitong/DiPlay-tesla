@@ -87,9 +87,13 @@ test('HTTPS preserves pairing, origin and frame bytes; untrusted clients reject 
     const upgraded=await upgrade(`https://127.0.0.1:${port}`);
     assert.match(upgraded.header,/101 Switching Protocols/);assert.deepEqual(upgraded.payload,upgraded.frame);
     assert.deepEqual(seen[2],{url:'/api/media',origin:`http://127.0.0.1:${upstreamPort}`});
+    const video=await upgrade(`https://127.0.0.1:${port}`,'/api/video');
+    assert.match(video.header,/101 Switching Protocols/);assert.deepEqual(video.payload,video.frame);
+    assert.deepEqual(seen[3],{url:'/api/video',origin:`http://127.0.0.1:${upstreamPort}`});
+    assert.match((await upgrade('https://foreign.invalid','/api/video')).header,/403/);
     assert.match((await upgrade('https://foreign.invalid')).header,/403/);
     assert.match((await upgrade(`https://127.0.0.1:${port}`,'/elsewhere')).header,/403/);
-    assert.equal(seen.length,3,'rejected upgrades never reach the host');
+    assert.equal(seen.length,4,'rejected upgrades never reach the host');
   } finally { await close(gateway); await close(upstream); }
 });
 

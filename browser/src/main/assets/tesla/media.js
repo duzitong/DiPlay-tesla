@@ -1,6 +1,7 @@
 import {createBrowserAudio,createAudioPreference} from './browser-audio.js';
 import {createRtcHealth} from './rtc-health.js';
 import {createMediaSocket} from './media-socket.js';
+import {createWebCodecsRenderer} from './webcodecs-renderer.js';
 
 // NotAllowedError is a current playback/activation restriction, not permanent codec absence.
 const retryableRtcError = error => error?.name !== 'NotSupportedError';
@@ -36,19 +37,22 @@ export async function presentJpegFrame({response,canvas,drawing,isCurrent,decode
 }
 
 // Recovery waiting follows WheelPlay's 4/10/30-second policy; media queues stay bounded separately.
-export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},onStats=()=>{},onDiagnostic=()=>{}}) {
+export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()=>{},onStats=()=>{},onDiagnostic=()=>{}}) {
   const recoveryKey = 'diplay-rtc-recovery-ms';
   const read = key => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   const save = (key,value) => { try { localStorage.setItem(key,String(value)); } catch (_) {} };
   const recoveryValue = value => [4000,10000,30000].includes(Number(value)) ? Number(value) : 10000;
   let selectedGrace = recoveryValue(read(recoveryKey)), busy = false;
-  let selectedMode = read('diplay-video') === 'jpeg' ? 'jpeg' : 'auto';
+  const videoMode=value=>['jpeg','webcodecs'].includes(value)?value:'auto';
+  let selectedMode = videoMode(read('diplay-video'));
   let socket = null, session = null, generation = 0, lastOfferId = -1, displayed = false;
   let connecting = false, disposed = false, retry = null, stats = {};
   const now = () => performance.now();
   const socketCurrent = (ws,ticket) => !disposed && socket === ws && generation === ticket;
   const current = state => state !== null && session === state && socketCurrent(state.socket,state.generation);
   function publishStats(patch) { stats = {...stats,...patch}; onStats({...stats}); }
+  const webcodecs=createWebCodecsRenderer({canvas,onStats:publishStats,onDiagnostic,
+    onFrame:()=>{video.hidden=true;onTransport('webcodecs');}});
   function send(data) {
     const ws = socket;
     if (disposed || !ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -79,7 +83,7 @@ export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},on
     video.pause(); video.srcObject = null; video.hidden = true;
     // A JPEG-to-JPEG automatic retry must not cancel a drag/long press in app.js.
     // Closing the owning control connection still releases input even if it was JPEG.
-    if (wasDisplayed || connectionEnded) onTransport(selectedMode === 'jpeg' ? 'jpeg' : 'waiting');
+    if (wasDisplayed || connectionEnded) onTransport(selectedMode==='webcodecs'?'webcodecs':selectedMode === 'jpeg' ? 'jpeg' : 'waiting');
     if (!reason) stats = {};
     publishStats({decodedFps:null,decodedFrames:null,dropped:null,recoveryGraceMs:old?.health.graceMs ?? selectedGrace,
       recovering:false,fallbackReason:reason});
@@ -284,7 +288,8 @@ export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},on
       connecting = false;
       const token = getToken();
       if (!token) { close('authentication-missing'); return; }
-      send({type:'hello',token,videoMode:selectedMode,rtc:selectedMode !== 'jpeg' && typeof RTCPeerConnection === 'function',
+      if(selectedMode==='webcodecs')onTransport('webcodecs');
+      send({type:'hello',token,videoMode:selectedMode,rtc:selectedMode === 'auto' && typeof RTCPeerConnection === 'function',
         recoveryGraceMs:selectedGrace});
     };
     ws.onmessage = event => {
@@ -297,7 +302,12 @@ export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},on
         if (!busy) { onDiagnostic('media-busy');busy = true; audio.disable('media-busy'); stopRtc('media-busy'); onTransport('waiting'); }
       } else if (data.type === 'welcome') {
         busy = false; publishStats({fallbackReason:null}); audioPreference.start();
-      } else if (data.type === 'rtc-offer' && Number.isSafeInteger(data.id) && typeof data.sdp === 'string') offer(data,ws,ticket);
+        if(selectedMode==='webcodecs') {
+          if(typeof data.videoSession==='string')webcodecs.start(getToken(),data.videoSession);
+          else publishStats({webcodecsError:'video-owner-unavailable'});
+        }
+      } else if(data.type==='video-error' && selectedMode==='webcodecs')webcodecs.failed(data);
+      else if (selectedMode==='auto' && data.type === 'rtc-offer' && Number.isSafeInteger(data.id) && typeof data.sdp === 'string') offer(data,ws,ticket);
       else if (data.type === 'rtc-progress' && current(session) && data.id === session.id) {
         const state = session, at = now(), received = {};
         if (Number.isSafeInteger(data.sent) && data.sent >= 0) state.health.source(data.sent,at);
@@ -319,7 +329,7 @@ export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},on
       if (!socketCurrent(ws,ticket)) return;
       onDiagnostic('socket-close');
       clearSocketHandlers(ws); socket = null; connecting = false;
-      audio.disable('socket-close');audio.setTransport(null); stopRtc(null,true,'socket-close'); scheduleRetry(ticket);
+      webcodecs.close();audio.disable('socket-close');audio.setTransport(null); stopRtc(null,true,'socket-close'); scheduleRetry(ticket);
     };
     ws.onerror = event => { if (socketCurrent(ws,ticket)) {onDiagnostic('socket-error',{reason:event?.reason});ws.close();} };
   }
@@ -329,11 +339,11 @@ export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},on
     generation++; clearTimeout(retry); retry = null; connecting = false;
     const old = socket; socket = null;
     if (old) { clearSocketHandlers(old); old.close(); }
-    audio.disable(reason);audio.setTransport(null); stopRtc(null,true,reason);
+    webcodecs.close();audio.disable(reason);audio.setTransport(null); stopRtc(null,true,reason);
   }
   function configureVideo(mode,graceMs = selectedGrace) {
     if (disposed) return;
-    const nextMode = mode === 'jpeg' ? 'jpeg' : 'auto', nextGrace = recoveryValue(graceMs);
+    const nextMode = videoMode(mode), nextGrace = recoveryValue(graceMs);
     save('diplay-video',nextMode); save(recoveryKey,nextGrace);
     if (nextMode === selectedMode && nextGrace === selectedGrace) return;
     selectedMode = nextMode; selectedGrace = nextGrace;
@@ -349,10 +359,10 @@ export function createMedia({video,getToken,onTransport=()=>{},onAudio=()=>{},on
     },
     useVideo(mode) { configureVideo(mode,selectedGrace); },
     get recoveryGraceMs() { return selectedGrace; },
-    get displayed() { return displayed; },
+    get displayed() { return displayed || (selectedMode==='webcodecs' && webcodecs.displayed); },
     dispose() {
       if (disposed) return;
-      close('dispose'); disposed = true; clearInterval(timer); audio.close();
+      close('dispose'); disposed = true; clearInterval(timer); webcodecs.dispose(); audio.close();
     },
   };
 }

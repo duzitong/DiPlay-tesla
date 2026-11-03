@@ -31,6 +31,7 @@ internal class BrowserMediaSocket(
     @Volatile private var authenticated = false
     private var attached = false
     private var rtc = false
+    private var webcodecs = false
     private var recoveryGraceMs = 10_000L
     private var reportedBusy = false
     @Volatile private var seen = System.nanoTime()
@@ -84,9 +85,10 @@ internal class BrowserMediaSocket(
     override fun sendFrame(frame: WebSocketFrame) { enqueue(frame, false) }
     private fun claimMedia() {
         if (attached) return
-        attached = media.attach(this, rtc, ::sendControl, ::sendAudio, recoveryGraceMs)
+        attached = media.attach(this, rtc, ::sendControl, ::sendAudio, recoveryGraceMs, webcodecs)
         if (!attached && !reportedBusy) { reportedBusy = true; media.note("Browser media busy: another page owns playback") }
-        sendControl(JSONObject().put("type", if (attached) "welcome" else "media-busy"))
+        sendControl(JSONObject().put("type", if (attached) "welcome" else "media-busy")
+            .put("videoSession", if (attached) media.videoSession(this) else null))
     }
     override fun onMessage(message: WebSocketFrame) {
         if (closed.get()) return
@@ -100,7 +102,9 @@ internal class BrowserMediaSocket(
                 rtc = data.optBoolean("rtc", false)
                 recoveryGraceMs = data.optLong("recoveryGraceMs", 10_000L)
                 authenticated = true
-                val mode = data.optString("videoMode").takeIf { it in setOf("auto", "jpeg") } ?: "unknown"
+                val mode = data.optString("videoMode").takeIf { it in setOf("auto", "jpeg", "webcodecs") } ?: "unknown"
+                webcodecs = mode == "webcodecs"
+                if (webcodecs) rtc = false
                 media.note("Browser hello mode=$mode rtc=$rtc recoveryGraceMs=${com.diplay.browser.rtc.RtcRecoveryPolicy.fromMillis(recoveryGraceMs).graceMs}")
                 claimMedia()
             } else when (type) {

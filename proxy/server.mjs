@@ -61,11 +61,11 @@ export function createGateway(upstreamText, tls) {
     const origin = request.headers.origin;
     const sameOrigin = origin === `https://${request.headers.host}` ||
       (!request.socket.encrypted && origin === `http://${request.headers.host}`);
-    if (request.url !== '/api/media' || !sameOrigin || String(request.headers.upgrade).toLowerCase() !== 'websocket') {
+    if (!['/api/media','/api/video'].includes(request.url) || !sameOrigin || String(request.headers.upgrade).toLowerCase() !== 'websocket') {
       client.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
     const headers = {...cleanHeaders(request.headers),host:upstream.host,origin:upstream.origin,connection:'Upgrade',upgrade:'websocket'};
-    const outgoing = (upstream.protocol === 'https:' ? https : http).request(new URL('/api/media',upstream),{headers,timeout:10000});
+    const outgoing = (upstream.protocol === 'https:' ? https : http).request(new URL(request.url,upstream),{headers,timeout:10000});
     mediaSockets.add(client);
     let remote;
     const destroy = () => { client.destroy(); remote?.destroy(); outgoing.destroy(); mediaSockets.delete(client); if(remote)mediaSockets.delete(remote); };

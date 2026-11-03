@@ -421,6 +421,12 @@ try {
     await capture(page,`audio-diagnostics-${scenario.name}-font130.jpg`);
     await page.keyboard.press('Escape');
     await openSettings(page);
+    assert.deepEqual(await page.locator('#transport option').evaluateAll(nodes=>nodes.map(node=>node.value)),
+      ['auto','jpeg','webcodecs']);
+    await page.locator('#transport').selectOption('webcodecs');
+    await page.locator('label[for=transport]').evaluate(node=>node.scrollIntoView({block:'start'}));
+    await capture(page,`webcodecs-settings-${scenario.name}-font130.jpg`);
+    await page.locator('#transport').selectOption('auto');
     await page.locator('#renderer').selectOption('canvas');
     await page.locator('#recovery').selectOption('4000');
     await page.locator('#fps').fill('60');

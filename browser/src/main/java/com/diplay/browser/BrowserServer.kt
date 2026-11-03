@@ -45,6 +45,7 @@ class BrowserServer(
     private val watchdog = Executors.newSingleThreadScheduledExecutor { Thread(it, "browser-touch-watchdog").apply { isDaemon = true } }
     private val clients = ConcurrentHashMap.newKeySet<ClientHandler>()
     private val sockets = ConcurrentHashMap.newKeySet<BrowserMediaSocket>()
+    private val videoSockets = ConcurrentHashMap.newKeySet<BrowserVideoSocket>()
     private val workers = ThreadPoolExecutor(6, 6, 30, TimeUnit.SECONDS, ArrayBlockingQueue(12),
         { Thread(it, "browser-http").apply { isDaemon = true } })
     private val http = object : NanoWSD(port) {
@@ -52,7 +53,11 @@ class BrowserServer(
         override fun serve(session: IHTTPSession): Response {
             if (isWebsocketRequested(session)) {
                 val origin = session.headers["origin"]
-                if (session.uri != "/api/media" || sockets.size >= 2) return reply(Response.Status.NOT_FOUND)
+                if (when (session.uri) {
+                        "/api/media" -> sockets.size >= 2
+                        "/api/video" -> videoSockets.size >= 2
+                        else -> true
+                    }) return reply(Response.Status.NOT_FOUND)
                 if (origin == null || runCatching { java.net.URI(origin).rawAuthority }.getOrNull() != session.headers["host"]) return reply(Response.Status.FORBIDDEN)
             }
             return super.serve(session).apply {
@@ -64,7 +69,9 @@ class BrowserServer(
             }
         }
         override fun openWebSocket(handshake: IHTTPSession): WebSocket =
-            BrowserMediaSocket(handshake, token, media) { sockets.remove(it) }.also { sockets.add(it) }
+            if (handshake.uri == "/api/video")
+                BrowserVideoSocket(handshake, token, media) { videoSockets.remove(it) }.also { videoSockets.add(it) }
+            else BrowserMediaSocket(handshake, token, media) { sockets.remove(it) }.also { sockets.add(it) }
     }
     init {
         require(port in 1024..65535 && token.matches(Regex("[a-f0-9]{32}")))
@@ -77,7 +84,9 @@ class BrowserServer(
             override fun closed(handler: ClientHandler) { clients.remove(handler) }
             override fun closeAll() { clients.toList().forEach { it.close() }; clients.clear() }
         })
-        watchdog.scheduleAtFixedRate({ controls.expire(); sockets.toList().forEach { it.expire() } }, 250, 250, TimeUnit.MILLISECONDS)
+        watchdog.scheduleAtFixedRate({
+            controls.expire(); sockets.toList().forEach { it.expire() }; videoSockets.toList().forEach { it.expire() }
+        }, 250, 250, TimeUnit.MILLISECONDS)
     }
     fun start(timeoutMillis: Int = 5000, daemon: Boolean = true) { http.start(timeoutMillis, daemon) }
     private fun serveRequest(session: IHTTPSession): Response {
@@ -89,7 +98,7 @@ class BrowserServer(
                     "/video-presentation.js", "/client-diagnostics.js" -> session.uri.drop(1) to "text/javascript; charset=utf-8"
                     "/app.js" -> "app.js" to "text/javascript; charset=utf-8"
                     "/media.js", "/browser-audio.js", "/rtc-health.js", "/rtc-renderer.js", "/display-presets.js",
-                    "/browser-touch.js", "/stream-summary.js", "/navigation-volume.js" -> session.uri.drop(1) to "text/javascript; charset=utf-8"
+                    "/browser-touch.js", "/stream-summary.js", "/navigation-volume.js", "/webcodecs-renderer.js" -> session.uri.drop(1) to "text/javascript; charset=utf-8"
                     "/audio-packet.js", "/audio-worklet.js", "/media-worker.js", "/media-socket.js" ->
                         session.uri.drop(1) to "text/javascript; charset=utf-8"
                     "/style.css" -> "style.css" to "text/css; charset=utf-8"
@@ -131,6 +140,7 @@ class BrowserServer(
                 }
                 "/api/frame" -> {
                     if (session.method != Method.GET) return reply(Response.Status.METHOD_NOT_ALLOWED)
+                    if (media.webCodecsSelected) return reply(Response.Status.CONFLICT)
                     frames.request()
                     val sequence = session.parameters["after"]?.firstOrNull()?.toLongOrNull() ?: -1
                     val frame = frames.after(sequence) ?: return reply(Response.Status.NO_CONTENT)
@@ -204,6 +214,7 @@ class BrowserServer(
     override fun close() {
         controls.release()
         sockets.toList().forEach { it.disconnect() }
+        videoSockets.toList().forEach { it.disconnect() }
         http.stop()
         workers.shutdownNow()
         watchdog.shutdownNow()
