@@ -412,6 +412,13 @@ async function verifyBluetoothAudio(page,scenario) {
   return {layout,noAudioContextAtStartup:true,gesturesBlocked:true,activeContextClosed:true,
     savedPreferencesPreserved:true,videoConnectionPreserved:true};
 }
+async function waitForSentCommand(page,scenario,selector,feedbackId) {
+  const label=await page.locator(selector).evaluate(node=>node.getAttribute('aria-label')||node.textContent);
+  const prefix=scenario.lang==='zh-CN'?'已发送：':scenario.lang==='ar'?'تم إرسال: ':'Sent: ';
+  await page.waitForFunction(({selector,feedbackId,expected})=>
+    !document.querySelector(selector).disabled && document.getElementById(feedbackId).textContent===expected,
+    {selector,feedbackId,expected:prefix+label});
+}
 async function verifyMediaControls(page,scenario) {
   audioRoute='bluetooth';
   await page.waitForFunction(()=>document.getElementById('audioButton').disabled &&
@@ -423,8 +430,7 @@ async function verifyMediaControls(page,scenario) {
   await page.locator('#keysButton').click();
   await page.locator('#virtualKeys').waitFor({state:'visible'});
   assert.equal(await page.locator('#nextTrackButton').isVisible(),false);
-  const submitted=()=>page.waitForFunction(()=>!document.querySelector('[data-action=resume]').disabled &&
-    /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('mediaCommandStatus').textContent));
+  const submitted=action=>waitForSentCommand(page,scenario,`#virtualKeys [data-action=${action}]`,'mediaCommandStatus');
   let heldTimer;
   const held=new Promise((resolve,reject)=>{
     heldTimer=setTimeout(()=>reject(new Error('Media command did not reach the fixture')),15000);
@@ -439,10 +445,10 @@ async function verifyMediaControls(page,scenario) {
     await page.locator('[data-action=pause]').evaluate(node=>node.click());
     assert.equal(actions.length,baseline.actions+1,'A pending command must not submit twice');
   } finally {clearTimeout(heldTimer);releaseAction?.();releaseAction=null;holdNextAction=null;}
-  await submitted();
+  await submitted('resume');
   for(const action of ['pause','previous','next']) {
     await page.locator(`#virtualKeys [data-action=${action}]`).click();
-    await submitted();
+    await submitted(action);
   }
   assert.deepEqual(actions.slice(baseline.actions).map(value=>value.action),['resume','pause','previous','next']);
   const bounds=await page.locator('#virtualKeys button').evaluateAll(nodes=>nodes.map(node=>{
@@ -510,13 +516,34 @@ async function verifyNextTrackShortcut(page,scenario) {
   assert.ok(bounds.x>=0 && bounds.y>=0 && bounds.x+bounds.width<=scenario.width &&
     bounds.y+bounds.height<=scenario.height,JSON.stringify(bounds));
   assert.equal(bounds.width,bounds.height,'The shortcut keeps the shared control size');
-  assert.ok(bounds.width>=44 && bounds.width<=56,'The shortcut matches app-icon sizing rather than an oversized control');
+  assert.ok(bounds.width>=44,'The scaled icon retains a usable minimum touch target');
   assert.ok(bounds.y+bounds.height<=scenario.height-80,'The app-menu area below the shortcut stays clear');
   assert.equal(await shortcut.evaluate(node=>{
     const box=node.getBoundingClientRect();
     return Boolean(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2)?.closest('#nextTrackButton'));
   }),true,'The reconnect notice and video must not cover the shortcut');
   await capture(page,`browser-next-track-${scenario.name}-font130.jpg`);
+  if(scenario.name==='full-en') {
+    const geometry=()=>shortcut.evaluate(node=>{
+      const box=node.getBoundingClientRect(),style=getComputedStyle(node.parentElement);
+      return {size:box.width,pictureWidth:parseFloat(style.getPropertyValue('--picture-width')),
+        center:box.x+box.width/2-parseFloat(style.getPropertyValue('--picture-left')),
+        clearance:innerHeight-box.bottom-parseFloat(style.getPropertyValue('--picture-bottom'))};
+    });
+    const initial=await geometry();
+    try {
+      await page.setViewportSize({width:2560,height:1600});
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const enlarged=await geometry(),scale=enlarged.pictureWidth/initial.pictureWidth;
+      assert.ok(scale>1,'The desktop case must actually enlarge the displayed picture');
+      for(const field of ['size','center','clearance'])
+        assert.ok(Math.abs(enlarged[field]-initial[field]*scale)<1,`${field} must follow picture scaling`);
+      await capture(page,'browser-next-track-desktop-en-font130.jpg');
+    } finally {
+      await page.setViewportSize({width:scenario.width,height:scenario.height});
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    }
+  }
   const label=await shortcut.getAttribute('aria-label');
   assert.ok(label);
   let reachedTimer;
@@ -533,8 +560,7 @@ async function verifyNextTrackShortcut(page,scenario) {
     await shortcut.evaluate(node=>node.click());
     assert.equal(actions.length,baseline.actions+1,'One pending shortcut press sends one action');
   } finally {clearTimeout(reachedTimer);releaseAction?.();releaseAction=null;holdNextAction=null;}
-  await page.waitForFunction(()=>!document.getElementById('nextTrackButton').disabled &&
-    /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('shortcutCommandStatus').textContent));
+  await waitForSentCommand(page,scenario,'#nextTrackButton','shortcutCommandStatus');
   assert.ok((await page.locator('#shortcutCommandStatus').textContent()).includes(label));
   failNextAction=true;
   await shortcut.click();
@@ -544,8 +570,7 @@ async function verifyNextTrackShortcut(page,scenario) {
   await page.waitForFunction(()=>document.getElementById('audioButton').disabled &&
     __uiFixture.audioContexts.every(context=>context.state==='closed'));
   await shortcut.focus();await page.keyboard.press('Enter');
-  await page.waitForFunction(()=>!document.getElementById('nextTrackButton').disabled &&
-    /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('shortcutCommandStatus').textContent));
+  await waitForSentCommand(page,scenario,'#nextTrackButton','shortcutCommandStatus');
   assert.deepEqual(actions.slice(baseline.actions).map(value=>value.action),['next','next','next']);
   assert.ok(touches.slice(baseline.touches).every(packet=>packet.contacts.length===0),
     'Shortcut clicks must not forward presses into the CarPlay picture');

@@ -57,7 +57,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     navigationVolumeChanged:['网页导航增益：{value}。音乐和蓝牙音量不变。','Browser guidance gain: {value}. Music and Bluetooth volume are unchanged.'],
     navigationClippingWarning:['峰值保护不可用，正增益已暂停；请刷新或使用支持 AudioWorklet 的浏览器。','Peak protection unavailable; positive gain is disabled. Reload or use an AudioWorklet-capable browser.'],
     commandSubmitting:['正在提交：{action}…','Submitting: {action}…'],
-    commandSubmitted:['已提交：{action}。尚未确认 iPhone 执行。','Submitted: {action}. iPhone execution is not confirmed.'],
+    commandSubmitted:['已发送：{action}','Sent: {action}'],
     commandFailed:['指令失败：{error}','Command failed: {error}'],
     audio:['在 Android 高级设置开启“通过车辆蓝牙播放 CarPlay 音频”后，音乐、导航、Siri 和通话全部由 iPhone 直接输出，网页只显示画面和接收触控；修改会重新连接 CarPlay。请将 iPhone 与车机配对，并在手机选择车机蓝牙音源；DiPlay 不转发蓝牙。关闭此项后可恢复网页音频。','Enable CarPlay audio over the car’s Bluetooth in Android Advanced settings for music, navigation, Siri and calls directly from the iPhone. This page provides video and touch only. Changing it reconnects CarPlay. Pair the iPhone with the car and select the car’s Bluetooth output on the phone; DiPlay does not relay Bluetooth. Turn it off to restore browser audio.'],
     bluetoothAudio:['iPhone 蓝牙音频','iPhone Bluetooth audio'],
@@ -128,7 +128,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     navigationVolumeDown:'الملاحة −',navigationVolumeUp:'الملاحة +',
     navigationVolumeChanged:'كسب الملاحة في المتصفح: {value}. لا يتغير صوت الموسيقى أو Bluetooth.',
     navigationClippingWarning:'حماية القمم غير متاحة؛ عُطّل الكسب الموجب. أعد التحميل أو استخدم متصفحًا يدعم AudioWorklet.',
-    commandSubmitted:'تم إرسال: {action}. لم يتم تأكيد التنفيذ على iPhone.',
+    commandSubmitted:'تم إرسال: {action}',
     commandFailed:'فشل الأمر: {error}',
     audio:'فعّل صوت CarPlay عبر بلوتوث السيارة في إعدادات Android المتقدمة لتشغيل الموسيقى والملاحة وSiri والمكالمات مباشرة من iPhone. تعرض الصفحة الفيديو وتستقبل اللمس فقط. يعيد التغيير اتصال CarPlay. أقرن iPhone بالسيارة واختر مخرج Bluetooth الخاص بها على الهاتف؛ لا يعيد DiPlay إرسال الصوت عبر Bluetooth. عطّل الخيار لاستعادة صوت المتصفح.',
     bluetoothAudio:'صوت Bluetooth من iPhone',bluetoothAudioHint:'يصدر كل الصوت مباشرة من iPhone. اختر مخرج Bluetooth الخاص بالسيارة على الهاتف. لا يؤدي إغلاق الصفحة إلى إيقاف هذا المسار الصوتي. لا تتحكم إعدادات صوت المتصفح أو التخزين المؤقت أو مستوى الملاحة على المضيف في صوت Bluetooth.',
@@ -518,6 +518,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     const style=$('nextTrackShortcut').style;
     style.setProperty('--picture-left',left+'px');
     style.setProperty('--picture-width',width+'px');
+    style.setProperty('--picture-height',height+'px');
     style.setProperty('--picture-bottom',Math.max(0,document.documentElement.clientHeight-top-height)+'px');
   }
   window.addEventListener('resize',refreshShortcutPosition);
