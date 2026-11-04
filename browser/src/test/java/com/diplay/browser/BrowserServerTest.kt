@@ -79,7 +79,7 @@ class BrowserServerTest {
             assertEquals(200, presets.first)
             assertTrue(String(presets.second).contains("export function displayPreset"))
             for (asset in listOf("browser-touch.js", "stream-summary.js", "rtc-renderer.js", "rtc-health.js", "media.js",
-                "navigation-volume.js", "audio-packet.js", "audio-worklet.js", "media-worker.js", "media-socket.js",
+                "navigation-volume.js", "audio-packet.js", "audio-worklet.js", "media-worker.js", "media-socket.js", "navigation-loudness.js",
                 "client-diagnostics.js", "webcodecs-renderer.js")) {
                 assertEquals(200, request("/$asset", auth = false).first)
             }

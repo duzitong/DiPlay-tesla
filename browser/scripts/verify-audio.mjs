@@ -17,17 +17,17 @@ const {chromium}=module.chromium?module:module.default;
 const sockets=new Set(),connections=[];
 const probe=`
 class Probe extends AudioWorkletProcessor {
-  constructor(){super();this.energy=[0,0];this.frames=0;}
+  constructor(){super();this.energy=[0,0];this.peak=[0,0];this.frames=0;}
   process(inputs,outputs){
     const size=outputs[0][0].length;
     for(let role=0;role<2;role++)for(let i=0;i<size;i++){
-      const value=inputs[role][0]?.[i]||0;this.energy[role]+=value*value;
+      const value=inputs[role][0]?.[i]||0;this.energy[role]+=value*value;this.peak[role]=Math.max(this.peak[role],Math.abs(value));
     }
     this.frames+=size;
     if(this.frames>=sampleRate/10){
       this.port.postMessage({frame:currentFrame,frames:this.frames,rate:sampleRate,
-        music:Math.sqrt(this.energy[0]/this.frames),navigation:Math.sqrt(this.energy[1]/this.frames)});
-      this.frames=0;this.energy=[0,0];
+        music:Math.sqrt(this.energy[0]/this.frames),navigation:Math.sqrt(this.energy[1]/this.frames),navigationPeak:this.peak[1]});
+      this.frames=0;this.energy=[0,0];this.peak=[0,0];
     }
     return true;
   }
@@ -145,6 +145,10 @@ try {
     await page.addInitScript(({mode})=>{
       if(mode==='legacy')window.Worker=undefined;
       const NativeContext=window.AudioContext;
+      const NativeWorklet=window.AudioWorkletNode;
+      window.AudioWorkletNode=class extends NativeWorklet {
+        constructor(context,name,options){super(context,name,options);if(name==='diplay-navigation-loudness')window.__navigationProtection=this;}
+      };
       window.AudioContext=class extends NativeContext {
         constructor(options) {
           super({...options,sampleRate:48000});window.__context=this;window.__gains=[];
@@ -164,7 +168,7 @@ try {
       await __context.audioWorklet.addModule('/__audio-probe.js');
       const node=new AudioWorkletNode(__context,'audio-test-probe',{numberOfInputs:2,numberOfOutputs:1,outputChannelCount:[2]});
       window.__samples=[];node.port.onmessage=e=>__samples.push(e.data);
-      __gains[0].connect(node,0,0);__gains[1].connect(node,0,1);node.connect(__context.destination);
+      __gains[0].connect(node,0,0);__navigationProtection.connect(node,0,1);node.connect(__context.destination);
       window.__probe=node;
     });
     await page.waitForFunction(()=>__samples.length>8 && __samples.slice(-3).every(sample=>
@@ -184,11 +188,11 @@ try {
     const sourceRms=.25/Math.sqrt(2);
     assert.ok(Math.abs(boosted.navigation/sourceRms-1)<.03,mode+': 100 percent has no base amplification');
     assert.ok(Math.abs(boosted.music-reduced.music)<.004,mode+': music gain must be unchanged');
-    await page.evaluate(()=>media.setAudioVolume('navigation',300));
-    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>
-      Math.abs(sample.navigation-.75/Math.sqrt(2))<.004));
+    await page.evaluate(()=>media.setNavigationGainDb(24));
+    await page.waitForFunction(()=>__samples.slice(-3).every(sample=>sample.navigation>.2 && sample.navigationPeak<=.891252));
     const maximum=await page.evaluate(()=>__samples.at(-1));
-    assert.ok(Math.abs(maximum.navigation/sourceRms-3)<.03,mode+': 300 percent rendered guidance gain');
+    assert.ok(maximum.navigation>sourceRms*1.25,mode+': protected +24 dB raises average guidance level');
+    assert.ok(maximum.navigationPeak<=10**(-1/20)+1e-6,mode+': rendered output peak stays below -1 dBFS');
     assert.ok(Math.abs(maximum.music-boosted.music)<.004,mode+': navigation boost must not raise music');
     (report.navigationGain ||= {})[mode]={sourceRms,boostedRms:boosted.navigation,
       ratio:boosted.navigation/sourceRms,maximumRms:maximum.navigation,maximumRatio:maximum.navigation/sourceRms,

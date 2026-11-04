@@ -54,8 +54,8 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     code:['6 位配对码','6-digit pairing code'], connect:['连接','Connect'], home:['主页','Home'], back:['返回','Back'], previous:['上一曲','Previous'], play:['播放 / 暂停','Play / pause'], next:['下一曲','Next'],
     resume:['播放','Play'],pause:['暂停','Pause'],
     navigationVolumeDown:['导航 −','Guidance −'],navigationVolumeUp:['导航 ＋','Guidance +'],
-    navigationVolumeChanged:['网页导航音量：{value}%。音乐和蓝牙音量不变。','Browser guidance volume: {value}%. Music and Bluetooth volume are unchanged.'],
-    navigationClippingWarning:['超过 100% 可能削波失真。','Above 100% may clip and distort.'],
+    navigationVolumeChanged:['网页导航增益：{value}。音乐和蓝牙音量不变。','Browser guidance gain: {value}. Music and Bluetooth volume are unchanged.'],
+    navigationClippingWarning:['峰值保护不可用，正增益已暂停；请刷新或使用支持 AudioWorklet 的浏览器。','Peak protection unavailable; positive gain is disabled. Reload or use an AudioWorklet-capable browser.'],
     commandSubmitting:['正在提交：{action}…','Submitting: {action}…'],
     commandSubmitted:['已提交：{action}。尚未确认 iPhone 执行。','Submitted: {action}. iPhone execution is not confirmed.'],
     commandFailed:['指令失败：{error}','Command failed: {error}'],
@@ -64,8 +64,8 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     bluetoothAudioHint:['全部声音由 iPhone 直接输出，请在手机选择车机蓝牙音源。关闭网页不会中断这条音频路径。网页音量、缓冲和主机导航音量不控制蓝牙声音。','All sound comes directly from the iPhone. Select the car’s Bluetooth output on the phone. Closing this page does not stop that audio path. Browser volume, buffering and host guidance level do not control Bluetooth sound.'],
     browserAudio:['浏览器音频（实验性）','Browser audio (experimental)'], audioOn:['浏览器音频已开启（实验性）','Browser audio enabled (experimental)'],audioPending:['浏览器音频 · 点按启动（实验性）','Browser audio · Tap to start (experimental)'],
     buffer:['音频缓冲','Audio buffer'], transport:['视频传输','Video transport'], auto:['WebRTC（不自动回退 JPEG）','WebRTC (no automatic JPEG fallback)'],
-    musicVolume:['音乐音量','Music volume'],navigationVolume:['导航音量','Navigation volume'],
-    volumeHint:['立即生效，并在此浏览器保存。导航可调 0–300%：100% 为原始音量，300% 为原始导航振幅的 3 倍（约 +9.5 dB），0% 静音，无额外基础增益。高增益可能失真，请从 100% 逐步调高。音乐和蓝牙音量不变。','Applies immediately and saves in this browser. Guidance ranges from 0–300%: 100% is the original level, 300% is 3× the original signal amplitude (about +9.5 dB), and 0% mutes. There is no extra base gain. High gain can distort; increase gradually from 100%. Music and Bluetooth volume are unchanged.'],
+    musicVolume:['音乐音量','Music volume'],navigationVolume:['导航增益（dB）','Guidance gain (dB)'],
+    volumeHint:['立即生效并保存。导航 0 dB 无额外增益，可调至 +24 dB；最低档静音。动态压缩提高平均响度，峰值保护限制在 −1 dBFS。增益不是实际响度增量，无法修复原音破音或扬声器失真。音乐和蓝牙音量不变。','Applies immediately and saves here. Guidance starts at 0 dB and supports up to +24 dB; the lowest setting mutes. Compression raises average loudness; peak protection caps samples at −1 dBFS. Gain is not an equal increase in loudness and cannot repair source or speaker distortion. Music and Bluetooth volume are unchanged.'],
     webcodecs:['H.264 / WebCodecs（实验性）','H.264 / WebCodecs (experimental)'],
     webcodecsHint:['WebCodecs 需要受信任的 HTTPS 和浏览器 H.264 解码支持；失败时请手动切回其他传输。只重建浏览器媒体连接，不重连 iPhone。','WebCodecs requires trusted HTTPS and browser H.264 decoding. Switch transport manually if it fails. Restarts browser media only, not the iPhone connection.'],
     webcodecsWaiting:['正在等待 WebCodecs 视频。','Waiting for WebCodecs video.'],
@@ -110,7 +110,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     presentationError:'خطأ أخذ عينة العرض',videoYes:'نعم',videoNo:'لا',presentationNote:'نطاق قياس العرض',presentationScope:'يشير الاستدعاء إلى إرسال الإطار إلى المركّب، وليس إلى تغيّر بكسلات الشاشة.',
     videoStreamActive:'تدفق الفيديو نشط',
     submittedFrameAge:'عمر الإطار المرسل إلى المركّب',
-    musicVolume:'مستوى صوت الموسيقى',navigationVolume:'مستوى صوت الملاحة',volumeHint:'يُطبّق فورًا ويُحفظ في هذا المتصفح. نطاق الملاحة 0–300%: يعطي 100% المستوى الأصلي، و300% ثلاثة أضعاف سعة الإشارة الأصلية (نحو +9.5 dB)، و0% للكتم، دون تضخيم أساسي إضافي. قد يسبب التضخيم العالي تشوّهًا؛ ارفع المستوى تدريجيًا من 100%. لا يتغير صوت الموسيقى أو Bluetooth.',
+    musicVolume:'مستوى صوت الموسيقى',navigationVolume:'كسب الملاحة (dB)',volumeHint:'يُطبّق فورًا ويُحفظ هنا. الكسب من 0 إلى +24 dB، وأدنى مستوى يكتم الصوت. يرفع الضغط الديناميكي متوسط الصوت ويحدّ حماية القمم عند −1 dBFS. لا يصلح تشوّه المصدر أو مكبر الصوت. لا يتغير صوت الموسيقى أو Bluetooth.',
     renderer:'طريقة عرض WebRTC',nativeRenderer:'الفيديو الأصلي (افتراضي)',canvasRenderer:'Canvas (تجريبي)',rendererHint:'قد يساعد Canvas في مشاكل عرض الفيديو في المتصفح ويزيد عمل الرسم. يُطبّق عند الحفظ دون إعادة اتصال CarPlay.',rendererFailed:'تعذّر الرسم على Canvas؛ استُعيد الفيديو الأصلي.',
     recovery:'مهلة استعادة WebRTC',quickRecovery:'4 ثوانٍ · إعادة محاولة سريعة',balancedRecovery:'10 ثوانٍ · متوازن (افتراضي)',patientRecovery:'30 ثانية · انتظار الاستعادة',recoveryHint:'تُحفظ الصورة الأخيرة أثناء الانقطاع القصير، ثم يعاد اتصال WebRTC دون الانتقال إلى JPEG. يعيد الحفظ اتصال وسائط المتصفح فقط دون إعادة اتصال iPhone.',jpegLimit:'يتوفر 60 إطارًا في الثانية لـ WebRTC؛ تحويل JPEG محدود بـ 30 إطارًا. يسري معدل الإطارات المحفوظ عند اتصال CarPlay التالي.',
     recovering:'تجري استعادة الفيديو',videoQueue:'قائمة انتظار الفيديو المضغوط',queueBudget:'مهلة انتظار الفيديو',expiredFrames:'الإطارات المنتهية',overflowFrames:'الإطارات المتجاوزة للسعة',keyframeSkips:'الإطارات المتخطاة حتى الإطار الرئيسي',sendFailures:'إخفاقات الإرسال المحلي',fallbackReason:'سبب الانتقال إلى JPEG',
@@ -126,8 +126,8 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     settings:'إعدادات العرض',expand:'ملء الشاشة',theme:'نهار / ليل',pair:'اتصال بالمضيف',pairHint:'اعرض رمز الاتصال المكوّن من ستة أرقام على الصفحة الرئيسية لجهاز Android المضيف. صالح لخمس دقائق. يتذكر المتصفح المضيف بعد الاقتران.',code:'رمز الاقتران من 6 أرقام',connect:'اتصال',home:'الرئيسية',back:'رجوع',previous:'السابق',play:'تشغيل / إيقاف مؤقت',next:'التالي',
     resume:'تشغيل',pause:'إيقاف مؤقت',commandSubmitting:'جارٍ إرسال: {action}…',
     navigationVolumeDown:'الملاحة −',navigationVolumeUp:'الملاحة +',
-    navigationVolumeChanged:'مستوى صوت الملاحة في المتصفح: {value}%. لا يتغير صوت الموسيقى أو Bluetooth.',
-    navigationClippingWarning:'قد يتسبب تجاوز 100% في قصّ الصوت وتشويهه.',
+    navigationVolumeChanged:'كسب الملاحة في المتصفح: {value}. لا يتغير صوت الموسيقى أو Bluetooth.',
+    navigationClippingWarning:'حماية القمم غير متاحة؛ عُطّل الكسب الموجب. أعد التحميل أو استخدم متصفحًا يدعم AudioWorklet.',
     commandSubmitted:'تم إرسال: {action}. لم يتم تأكيد التنفيذ على iPhone.',
     commandFailed:'فشل الأمر: {error}',
     audio:'فعّل صوت CarPlay عبر بلوتوث السيارة في إعدادات Android المتقدمة لتشغيل الموسيقى والملاحة وSiri والمكالمات مباشرة من iPhone. تعرض الصفحة الفيديو وتستقبل اللمس فقط. يعيد التغيير اتصال CarPlay. أقرن iPhone بالسيارة واختر مخرج Bluetooth الخاص بها على الهاتف؛ لا يعيد DiPlay إرسال الصوت عبر Bluetooth. عطّل الخيار لاستعادة صوت المتصفح.',
@@ -207,6 +207,8 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     button.setAttribute('aria-pressed',String(media.audio.enabled));
     for(const id of ['musicVolume','navigationVolume','audioBuffer','navigationVolumeDown','navigationVolumeUp'])$(id).disabled=!available;
     $('volumeHint').textContent=t(bluetoothAudio?'bluetoothAudioHint':'volumeHint');
+    if(available && media.audio.stats().navigationProtected===false && media.audio.stats().playbackError==='navigation-protection-unavailable')
+      $('volumeHint').textContent+=' '+t('navigationClippingWarning');
   }
   media.setAudioAvailable(false);
   refreshAudioControls();
@@ -214,21 +216,24 @@ import {createClientDiagnostics} from './client-diagnostics.js';
   media.audio.setBuffer(Number($('audioBuffer').value));
   function showAudioVolume(role,percent) {
     const slider = $(role+'Volume'), output = $(role+'VolumeValue');
-    slider.value=String(percent);output.value=percent+'%';slider.setAttribute('aria-valuetext',percent+'%');
+    const text=role==='navigation'?formatNavigationDb(percent):percent+'%';
+    slider.value=String(percent);output.value=text;slider.setAttribute('aria-valuetext',text);
   }
+  const formatNavigationDb=db=>db<=-60?'−∞ dB':(db>0?'+':'')+db+' dB';
   for (const role of ['music','navigation']) {
-    showAudioVolume(role,media.audio.volumes[role]);
-    $(role+'Volume').addEventListener('input',()=>showAudioVolume(role,media.setAudioVolume(role,$(role+'Volume').value)));
+    showAudioVolume(role,role==='navigation'?media.audio.navigationGainDb:media.audio.volumes[role]);
+    $(role+'Volume').addEventListener('input',()=>showAudioVolume(role,role==='navigation'?
+      media.setNavigationGainDb($(role+'Volume').value):media.setAudioVolume(role,$(role+'Volume').value)));
   }
-  for(const [id,delta] of [['navigationVolumeDown',-10],['navigationVolumeUp',10]]) {
+  for(const [id,delta] of [['navigationVolumeDown',-1],['navigationVolumeUp',1]]) {
     $(id).addEventListener('click',()=>{
       if(!audioPolicyKnown || bluetoothAudio)return;
-      const percent=media.setAudioVolume('navigation',media.audio.volumes.navigation+delta);
-      showAudioVolume('navigation',percent);
+      const db=media.setNavigationGainDb(media.audio.navigationGainDb+delta);
+      showAudioVolume('navigation',db);
       const feedback=$('mediaCommandStatus');
       feedback.hidden=false;
-      feedback.textContent=t('navigationVolumeChanged').replace('{value}',String(percent))+
-        (percent>100?' '+t('navigationClippingWarning'):'');
+      feedback.textContent=t('navigationVolumeChanged').replace('{value}',formatNavigationDb(db))+
+        (db>0 && !media.audio.stats().navigationProtected?' '+t('navigationClippingWarning'):'');
     });
   }
   $('audioButton').addEventListener('click',async()=>{

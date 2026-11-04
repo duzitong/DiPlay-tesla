@@ -1,5 +1,6 @@
 // PCM packet layout and independent playback route inspired by tepla 0.2.1 (GPL-3.0).
 import {decodeAudioPacket} from './audio-packet.js';
+import {normalizeNavigationDb,navigationAmplitude} from './navigation-loudness.js';
 export {decodeAudioPacket} from './audio-packet.js';
 
 export function normalizeAudioVolume(value, maximum=100) {
@@ -34,7 +35,7 @@ export function createAudioPreference({audio,storedValue=null,save=()=>{}}) {
   };
 }
 
-export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volumes:initialVolumes={},createContext=()=>new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'})}) {
+export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volumes:initialVolumes={},navigationGainDb,createContext=()=>new (window.AudioContext||window.webkitAudioContext)({latencyHint:'playback'})}) {
   let context = null, enabled = false, generation = 0, bufferMs = 200;
   let transport=null, worklet=null, moduleLoad=null, workletFailed=false, playbackError=null;
   let workletStats={};
@@ -43,18 +44,28 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
   const streams = new Map(), nodes = new Set();
   const volumes = {music:normalizeAudioVolume(initialVolumes.music),navigation:normalizeAudioVolume(initialVolumes.navigation,300)};
   const gains = new Map();
-  const gainValue = role => volumes[role]/100;
+  let navigationDb=navigationGainDb===undefined?(volumes.navigation===0?-60:20*Math.log10(volumes.navigation/100)):
+    normalizeNavigationDb(navigationGainDb),protection=null,protectionLoad=null;
+  const gainValue = role => role==='navigation'?navigationAmplitude(protection?navigationDb:Math.min(0,navigationDb)):volumes[role]/100;
+  function setNavigationGainDb(value) {
+    navigationDb=normalizeNavigationDb(value);
+    rampGain('navigation');
+    return navigationDb;
+  }
+  function rampGain(role) {
+    if(role==='navigation')protection?.port.postMessage({type:'gain',db:navigationDb});
+    const parameter=gains.get(role)?.gain;
+    if(!parameter)return;
+    const now=context.currentTime;
+    if(typeof parameter.cancelAndHoldAtTime==='function')parameter.cancelAndHoldAtTime(now);
+    else {parameter.cancelScheduledValues(now);parameter.setValueAtTime(parameter.value,now);}
+    parameter.linearRampToValueAtTime(gainValue(role),now+.03);
+  }
   function setVolume(role,value) {
     if (!Object.hasOwn(volumes,role)) return null;
     volumes[role] = normalizeAudioVolume(value,role==='navigation'?300:100);
-    const parameter = gains.get(role)?.gain;
-    if (parameter) {
-      const now = context.currentTime;
-      // Hold an in-progress ramp when possible, avoiding clicks on repeated input.
-      if (typeof parameter.cancelAndHoldAtTime === 'function') parameter.cancelAndHoldAtTime(now);
-      else { parameter.cancelScheduledValues(now); parameter.setValueAtTime(parameter.value,now); }
-      parameter.linearRampToValueAtTime(gainValue(role),now+.03);
-    }
+    if(role==='navigation')navigationDb=volumes[role]===0?-60:20*Math.log10(volumes[role]/100);
+    rampGain(role);
     return volumes[role];
   }
   let underruns = 0, publishedState = null;
@@ -97,12 +108,46 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
       if (!context || context.state === 'closed') {
         for (const gain of gains.values()) gain.disconnect();
         gains.clear();
+        protection?.disconnect();protection=null;protectionLoad=null;
         context = createContext();
-        moduleLoad=null;workletFailed=false;
+        moduleLoad=null;workletFailed=false;playbackError=null;
         for (const role of ['music','navigation']) {
           const gain = context.createGain();
           gain.gain.value = gainValue(role);
           gain.connect(context.destination); gains.set(role,gain);
+        }
+        if(context.audioWorklet && typeof AudioWorkletNode==='function') {
+          const loadedContext=context;
+          protectionLoad=new Promise((resolve,reject)=>{
+            const timeout=setTimeout(()=>reject(new Error('Navigation protection load timed out')),4000);
+            Promise.resolve().then(()=>loadedContext.audioWorklet.addModule(new URL('./navigation-loudness.js',import.meta.url)))
+              .then(()=>{clearTimeout(timeout);resolve();},error=>{clearTimeout(timeout);reject(error);});
+          })
+            .then(()=>{
+              if(context!==loadedContext || loadedContext.state==='closed')return;
+              const node=new AudioWorkletNode(loadedContext,'diplay-navigation-loudness',{
+                numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2]});
+              protection=node;
+              node.onprocessorerror=()=>{
+                if(protection!==node)return;
+                playbackError='navigation-protection-failed';
+                protection=null;node.disconnect();gains.get('navigation').disconnect();
+                onDiagnostic('audio-compatibility',{reason:playbackError});
+                console.error('DiPlay navigation: peak protection processor failed; audio disabled');
+                disable(playbackError);
+                loadedContext.close().catch(error=>console.error('DiPlay navigation: failed to close audio context',error));
+              };
+              gains.get('navigation').disconnect();
+              gains.get('navigation').connect(node);node.connect(loadedContext.destination);
+              rampGain('navigation');
+            }).catch(error=>{
+              playbackError='navigation-protection-unavailable';
+              console.warn('DiPlay navigation: positive gain disabled; protection unavailable',error);
+              onDiagnostic('audio-compatibility',{reason:'navigation-protection-unavailable'});
+            });
+        } else {
+          playbackError='navigation-protection-unavailable';
+          onDiagnostic('audio-compatibility',{reason:playbackError});
         }
         context.onstatechange = () => {
           onDiagnostic('audio-context',{contextState:context.state});
@@ -122,6 +167,7 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
         moduleLoad.catch(()=>{});
       }
       await resumed;
+      await protectionLoad;
       if (ticket !== generation) return false;
       if (context.state !== 'running') throw new Error('Audio context paused');
       if(moduleLoad && !workletFailed && transport?.bindAudio && !worklet) {
@@ -134,7 +180,7 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
           node.connect(gains.get('music'),0);node.connect(gains.get('navigation'),1);node.connect(context.destination,2);
           node.onprocessorerror=()=>{if(worklet===node)failWorklet('processor-failed');};
           transport.bindAudio(node.port,{bufferMs,playback:true,sampleRate:context.sampleRate});
-          worklet=node;playbackError=null;stop();
+          worklet=node;if(protection)playbackError=null;stop();
         } catch {
           if(ticket!==generation)return false;
           if(node && worklet!==node) {node.disconnect();node.port.postMessage({type:'close'});node.port.close();}
@@ -196,6 +242,8 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
       }
     },
     setVolume,
+    setNavigationGainDb,
+    get navigationGainDb(){return navigationDb;},
     get volumes() { return {...volumes}; },
     heartbeat:publish,
     stopped(stream) {
@@ -207,6 +255,7 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
       disable();
       for (const gain of gains.values()) gain.disconnect();
       gains.clear();
+      protection?.disconnect();protection=null;protectionLoad=null;
       if (context) { context.onstatechange=null; context.close().catch(()=>{}); context=null; }
     },
     get enabled() { return enabled; },
@@ -215,6 +264,7 @@ export function createBrowserAudio({send,onState=()=>{},onDiagnostic=()=>{},volu
       return {enabled,targetMs:bufferMs,queuedMs:enabled?(worklet?workletStats.queuedMs||0:Math.max(0,...[...streams.values()].map(stream=>(stream.next-now)*1000))):0,
         musicVolume:volumes.music,navigationVolume:volumes.navigation,
         musicGain:gainValue('music'),navigationGain:gainValue('navigation'),
+        navigationGainDb:navigationDb,navigationProtected:!!protection,
         ...workletStats,underruns:underruns+retired.underruns+(workletStats.underruns||0),
         musicUnderruns:legacyUnderruns.music+retired.musicUnderruns+(workletStats.musicUnderruns||0),
         navigationUnderruns:legacyUnderruns.navigation+retired.navigationUnderruns+(workletStats.navigationUnderruns||0),

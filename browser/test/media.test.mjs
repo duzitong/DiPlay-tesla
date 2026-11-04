@@ -545,13 +545,18 @@ test('blocked storage keeps default volumes and live adjustments for the page li
   } finally { await f.dispose(); }
 });
 
-test('saved navigation boost loads above 100 without raising music limits or changing old defaults',async()=>{
+test('legacy navigation percent cannot restore an unprotected boost and new dB settings save independently',async()=>{
   const f=fixture({savedVolumes:{music:'300',navigation:'275'}});
   try {
     assert.deepEqual(f.media.audio.volumes,{music:100,navigation:275});
-    assert.equal(f.media.audio.stats().navigationGain,2.75);
+    assert.equal(f.media.audio.stats().navigationGain,1,'legacy boost is not restored without peak protection');
     assert.equal(f.media.setAudioVolume('navigation',999),300);
     assert.equal(f.storage.get('diplay-navigation-volume'),'300');
+    assert.equal(f.media.audio.navigationGainDb,20*Math.log10(3));
+    assert.equal(f.media.setNavigationGainDb(18),18);
+    assert.equal(f.storage.get('diplay-navigation-gain-db'),'18');
+    assert.equal(f.media.audio.navigationGainDb,18);
+    assert.equal(f.storage.get('diplay-music-volume'),'300');
     assert.equal(f.media.setAudioVolume('music',300),100);
     assert.equal(f.media.audio.stats().musicGain,1);
     assert.equal(f.sockets[0].closeCalls,0);

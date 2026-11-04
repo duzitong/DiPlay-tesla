@@ -104,23 +104,37 @@ Whitelisted media/arrow keydown events are logged without intercepting them, so
 an in-car test can establish which steering-wheel events actually reach the page.
 
 The virtual **Guidance − / +** buttons change only the browser's navigation gain
-in 10-percentage-point steps, sharing the slider and its saved 0–300% value.
+in 1 dB steps, sharing the slider and its saved dB value.
 They send no phone volume keys and are disabled in all-Bluetooth mode. Navigation
 must actually arrive on CarPlay's guidance stream; music sent directly to the car
-over Bluetooth bypasses these controls. Gain above 100% can clip; start at 100%.
+over Bluetooth bypasses these controls.
 
-When Bluetooth mode is off, the browser's **Navigation volume** ranges from **0–300%**, with **no extra base
-gain**: 100% is the original signal level, 300% is threefold original signal
-amplitude (approximately +9.5 dB), and 0% mutes. Saved percentages are retained.
-This is not threefold perceived loudness. Start at 100% and increase gradually; high gain can clip. Music
-gain remains limited to 0–100% on receivers that play browser music; that control
+When all-Bluetooth mode is off, **Guidance gain (dB)** defaults to **0 dB** and
+ranges from −60 dB (mute) to **+24 dB**. It uses a new browser preference
+(`diplay-navigation-gain-db`); old percentage boosts are not automatically
+restored. Start at +6 dB and raise it gradually. At 0 dB the original waveform
+is unchanged below the protection ceiling, apart from 5 ms of lookahead delay.
+Positive gain enables navigation-only soft-knee compression (−12 dB threshold,
+3:1 ratio, 3 ms attack / 40 ms release), followed by a stereo-linked lookahead
+limiter with a **−1 dBFS sample-peak ceiling** and 20 ms release.
+Its gain ramps across the lookahead window before a transient is played, rather
+than hard-clamping individual samples at the output.
+Compressor gain reduction is capped at the requested boost so enabling a small
+positive setting does not attenuate the original signal before peak protection.
+Requested gain is not an equal increase in perceived loudness. This is not a
+true-peak guarantee, nor a repair for distorted source audio or speaker overload.
+If the protection worklet cannot load, positive gain is disabled and the browser
+shows a warning; attenuation and mute still work. A processor failure releases
+audio rather than bypassing protection.
+
+Music gain remains limited to 0–100% on receivers that play browser music; that control
 does not adjust music sent directly from the iPhone in the split profile.
 Adjustments apply immediately, persist in this browser,
 and affect neither music gain nor the car's Bluetooth volume or existing ducking.
 The separate host navigation attenuation
 in Advanced audio remains shared with Android and still applies before this gain.
 Large-font full, compact/high-density and Arabic RTL screenshots are in
-`docs/testing/tesla/bluetooth-navigation-20261103/`.
+`docs/testing/tesla/navigation-db-20261104/`.
 
 ## HTTPS browser gateway (0.1.1+)
 

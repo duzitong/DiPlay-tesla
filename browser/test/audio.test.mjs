@@ -149,7 +149,7 @@ test('volume normalization preserves safe defaults, clamps values and rejects ma
   }
 });
 
-test('navigation reaches 300 percent without a hidden base gain across context recreation',async()=>{
+test('legacy navigation boost cannot bypass missing peak protection across context recreation',async()=>{
   const {audio,gains,started,context}=fixture();
   await audio.enable();
   assert.equal(gains[0].gain.value,1);
@@ -169,14 +169,14 @@ test('navigation reaches 300 percent without a hidden base gain across context r
   assert.equal(audio.setVolume('navigation',0),0);
   assert.equal(gains[1].gain.value,0);
   assert.equal(audio.setVolume('navigation',150),150);
-  assert.equal(gains[1].gain.value,1.5);
+  assert.equal(gains[1].gain.value,1);
   assert.equal(audio.setVolume('navigation',999),300);
-  assert.equal(audio.stats().navigationGain,3);
-  assert.equal(gains[1].gain.value,3);
+  assert.equal(audio.stats().navigationGain,1);
+  assert.equal(gains[1].gain.value,1);
   assert.equal(audio.setVolume('music',300),100);
   assert.equal(gains[0].gain.value,1);
   audio.close();await audio.enable();
-  assert.equal(gains.at(-1).gain.value,3);
+  assert.equal(gains.at(-1).gain.value,1);
   assert.equal(gains.at(-2).gain.value,1);
   audio.close();
 });
@@ -234,7 +234,7 @@ async function workletFixture(run,load=Promise.resolve()) {
   const previous=Object.getOwnPropertyDescriptor(globalThis,'AudioWorkletNode');
   f.context.sampleRate=48000;f.context.audioWorklet={addModule:()=>load};
   Object.defineProperty(globalThis,'AudioWorkletNode',{configurable:true,value:class {
-    constructor(){this.port={close(){}};nodes.push(this);}
+    constructor(context,name){this.name=name;this.port={close(){},postMessage(){}};nodes.push(this);}
     connect(target,output){calls.push(['connect',output,target]);}
     disconnect(){this.disconnected=true;}
   }});
@@ -249,7 +249,7 @@ test('worklet owns PCM playback while existing gains and packet-independent cont
   await workletFixture(async({audio,nodes,calls,transport,gains,started})=>{
     await audio.enable();
     assert.equal(audio.stats().engine,'worklet');
-    assert.deepEqual(calls.filter(c=>c[0]==='connect').map(c=>c[1]),[0,1,2]);
+    assert.deepEqual(calls.filter(c=>c[0]==='connect' && c[1]!==undefined).map(c=>c[1]),[0,1,2]);
     assert.equal(calls.find(c=>c[0]==='bind')[2].sampleRate,48000);
     transport.onaudiostats({queuedMs:400,underruns:3,musicUnderruns:3,navigationUnderruns:0});
     assert.equal(audio.stats().queuedMs,400);assert.equal(audio.stats().musicUnderruns,3);
@@ -259,10 +259,40 @@ test('worklet owns PCM playback while existing gains and packet-independent cont
     audio.setBuffer(400);assert.ok(calls.some(c=>c[0]==='buffer'&&c[1]===400));
     audio.stopped(9);assert.ok(calls.some(c=>c[0]==='stop'&&c[1]===9));
     assert.equal(started.length,0);
-    audio.disable();assert.equal(nodes[0].disconnected,true);
+    audio.disable();assert.equal(nodes.find(node=>node.name==='diplay-pcm').disconnected,true);
     transport.onaudiostats({queuedMs:999,underruns:999});
     assert.equal(audio.stats().underruns,3);assert.equal(audio.enabled,false);
   });
+});
+
+test('dB boost uses navigation protection only and processor failure releases the audio route',async()=>{
+  await workletFixture(async({audio,gains,nodes,messages,context})=>{
+    await audio.enable();
+    assert.equal(audio.setNavigationGainDb(12),12);
+    assert.ok(Math.abs(gains[1].gain.value-10**(.6))<1e-10);
+    assert.equal(gains[0].gain.value,1);
+    assert.equal(audio.stats().navigationProtected,true);
+    const protection=nodes.find(node=>node.name==='diplay-navigation-loudness');
+    assert.equal(gains[1].target,protection);
+    assert.equal(gains[0].target,context.destination);
+    protection.onprocessorerror();
+    assert.equal(audio.enabled,false);
+    assert.equal(messages.at(-1).playback,false);
+    assert.equal(audio.stats().playbackError,'navigation-protection-failed');
+  });
+});
+
+test('unavailable protection never permits positive dB gain but attenuation and mute remain usable',async()=>{
+  const {audio,gains}=fixture();
+  await audio.enable();
+  audio.setNavigationGainDb(24);
+  assert.equal(gains[1].gain.value,1);
+  assert.equal(audio.stats().navigationProtected,false);
+  assert.equal(audio.stats().playbackError,'navigation-protection-unavailable');
+  audio.setNavigationGainDb(-6);
+  assert.ok(Math.abs(gains[1].gain.value-10**(-.3))<1e-10);
+  audio.setNavigationGainDb(-60);assert.equal(gains[1].gain.value,0);
+  audio.close();
 });
 
 test('worklet module failure explicitly falls back to native-rate legacy audio on the same transport',async()=>{
@@ -279,7 +309,7 @@ test('disabling audio while its module loads cannot attach a late playback port'
   let ready;
   await workletFixture(async({audio,nodes,calls})=>{
     const pending=audio.enable();audio.disable();ready();
-    assert.equal(await pending,false);assert.equal(nodes.length,0);
+    assert.equal(await pending,false);assert.ok(nodes.every(node=>node.name==='diplay-navigation-loudness'));
     assert.ok(!calls.some(c=>c[0]==='bind'));
   },new Promise(resolve=>ready=resolve));
 });
@@ -287,11 +317,11 @@ test('disabling audio while its module loads cannot attach a late playback port'
 test('processor failure keeps saved volumes and restores compatibility without a reconnect or gesture',async()=>{
   await workletFixture(async({audio,nodes,started,gains})=>{
     audio.setVolume('music',42);await audio.enable();
-    nodes[0].onprocessorerror();
+    nodes.find(node=>node.name==='diplay-pcm').onprocessorerror();
     assert.equal(audio.enabled,true);assert.equal(audio.stats().playbackError,'processor-failed');
-    assert.equal(nodes[0].disconnected,true);
+    assert.equal(nodes.find(node=>node.name==='diplay-pcm').disconnected,true);
     audio.receive(packet(1));
     assert.equal(started.length,1);assert.equal(gains[0].gain.value,.42);
-    await audio.enable();assert.equal(nodes.length,1);
+    await audio.enable();assert.equal(nodes.filter(node=>node.name==='diplay-pcm').length,1);
   });
 });

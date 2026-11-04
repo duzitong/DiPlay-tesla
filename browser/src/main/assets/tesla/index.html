@@ -29,11 +29,11 @@
         <input id="musicVolume" type="range" min="0" max="100" step="1" value="100" aria-describedby="volumeHint">
       </div>
       <div class="audioVolume">
-        <label for="navigationVolume" data-i18n="navigationVolume">导航音量</label><output id="navigationVolumeValue" for="navigationVolume" dir="ltr">100%</output>
-        <input id="navigationVolume" type="range" min="0" max="300" step="1" value="100" aria-describedby="volumeHint">
+        <label for="navigationVolume" data-i18n="navigationVolume">导航增益（dB）</label><output id="navigationVolumeValue" for="navigationVolume" dir="ltr">0 dB</output>
+        <input id="navigationVolume" type="range" min="-60" max="24" step="1" value="0" aria-describedby="volumeHint">
       </div>
     </div>
-    <p id="volumeHint" data-i18n="volumeHint">立即生效，并在此浏览器保存。导航可调 0–300%：100% 为原始音量，300% 为原始导航振幅的 3 倍（约 +9.5 dB），0% 静音，无额外基础增益。高增益可能失真，请从 100% 逐步调高。音乐和蓝牙音量不变。</p>
+    <p id="volumeHint" data-i18n="volumeHint">导航增益以 dB 调整，最高 +24 dB，最低档静音。动态压缩提高平均响度，峰值保护限制在 −1 dBFS。音乐和蓝牙音量不变。</p>
     <details id="audioAdvanced"><summary data-i18n="advancedAudio">高级音频</summary>
     <section class="navigationVolume" aria-labelledby="navigationTitle">
       <div class="navigationHeading"><label id="navigationTitle" for="navigationLevel" data-i18n="hostNavigationVolume">主机导航音量</label><output id="navigationValue" for="navigationLevel" dir="ltr">—</output></div>

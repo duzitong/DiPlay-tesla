@@ -300,16 +300,17 @@ async function verifyDiagnostics(page) {
 }
 async function verifyVolumes(page,scenario) {
   const baseline={hellos:await page.evaluate(()=>window.__uiFixture.hellos.length),actions:actions.length};
-  const expected={music:100,navigation:100},stored={music:null,navigation:null},steps=[];
+  const expected={music:100,navigation:0},stored={music:null,navigation:null},steps=[];
+  const volumeText=(role,value)=>role==='music'?value+'%':value<=-60?'−∞ dB':(value>0?'+':'')+value+' dB';
   async function checkState(stage) {
     const state=await page.evaluate(()=>Object.fromEntries(['music','navigation'].map(role=>{
       const slider=document.getElementById(role+'Volume'),output=document.getElementById(role+'VolumeValue');
       return [role,{value:slider.value,output:output.value,text:output.textContent,
-        aria:slider.getAttribute('aria-valuetext'),stored:localStorage.getItem('diplay-'+role+'-volume')}];
+        aria:slider.getAttribute('aria-valuetext'),stored:localStorage.getItem(role==='navigation'?'diplay-navigation-gain-db':'diplay-music-volume')}];
     })));
     for(const role of ['music','navigation'])assert.deepEqual(state[role],{
-      value:String(expected[role]),output:expected[role]+'%',text:expected[role]+'%',
-      aria:expected[role]+'%',stored:stored[role]
+      value:String(expected[role]),output:volumeText(role,expected[role]),text:volumeText(role,expected[role]),
+      aria:volumeText(role,expected[role]),stored:stored[role]
     },stage+': '+role);
     assert.equal(await page.evaluate(()=>window.__uiFixture.hellos.length),baseline.hellos,stage+': volume must not restart media');
     assert.equal(actions.length,baseline.actions,stage+': volume must not send a CarPlay action');
@@ -327,13 +328,13 @@ async function verifyVolumes(page,scenario) {
   await page.keyboard.press('Shift+Tab');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'musicVolume');
   for(const role of ['music','navigation']) {
-    const maximum=role==='navigation'?300:100;
+    const maximum=role==='navigation'?24:100,minimum=role==='navigation'?-60:0;
     const slider=page.locator('#'+role+'Volume');
     const attributes=await slider.evaluate(node=>({type:node.type,min:node.min,max:node.max,step:node.step,
       disabled:node.disabled,tabIndex:node.tabIndex,label:node.labels?.[0]?.textContent.trim(),
       output:document.getElementById(node.id+'Value').getAttribute('for')}));
     assert.deepEqual({type:attributes.type,min:attributes.min,max:attributes.max,step:attributes.step},
-      {type:'range',min:'0',max:String(maximum),step:'1'});
+      {type:'range',min:String(minimum),max:String(maximum),step:'1'});
     assert.ok(!attributes.disabled && attributes.tabIndex>=0 && attributes.label,role+': accessible slider');
     assert.equal(attributes.output,role+'Volume');
     await slider.scrollIntoViewIfNeeded();
@@ -345,8 +346,8 @@ async function verifyVolumes(page,scenario) {
     await slider.click();
     assert.equal(await page.evaluate(()=>document.activeElement.id),role+'Volume');
     // Keep focus on the slider: each assertion observes live input, before change/blur.
-    const keys=[['Home',0],['ArrowRight',1],['End',maximum],['ArrowRight',maximum],
-      ['Home',0],['ArrowLeft',0],['End',maximum],...(role==='music'?[['ArrowLeft',99]]:[['End',maximum]])];
+    const keys=[['Home',minimum],['ArrowRight',minimum+1],['End',maximum],['ArrowRight',maximum],
+      ['Home',minimum],['ArrowLeft',minimum],['End',maximum],...(role==='music'?[['ArrowLeft',99]]:[['End',maximum]])];
     for(const [key,value] of keys) {
       await page.keyboard.press(key);expected[role]=value;stored[role]=String(value);
       assert.equal(await page.evaluate(()=>document.activeElement.id),role+'Volume');
@@ -477,18 +478,18 @@ async function verifyMediaControls(page,scenario) {
   },value);
   const checkNavigation=async value=>{
     assert.equal(await page.locator('#navigationVolume').inputValue(),String(value));
-    assert.equal(await page.evaluate(()=>localStorage.getItem('diplay-navigation-volume')),String(value));
+    assert.equal(await page.evaluate(()=>localStorage.getItem('diplay-navigation-gain-db')),String(value));
     assert.equal(await page.locator('#musicVolume').inputValue(),music);
     assert.equal(actions.length,beforeButtons,'Guidance gain must not send phone/media commands');
   };
-  await setNavigation(100);
-  await page.locator('#navigationVolumeUp').click();await checkNavigation(110);
-  await page.locator('#navigationVolumeDown').click();await checkNavigation(100);
   await setNavigation(0);
+  await page.locator('#navigationVolumeUp').click();await checkNavigation(1);
   await page.locator('#navigationVolumeDown').click();await checkNavigation(0);
-  await setNavigation(300);
-  await page.locator('#navigationVolumeUp').click();await checkNavigation(300);
-  await setNavigation(100);
+  await setNavigation(-60);
+  await page.locator('#navigationVolumeDown').click();await checkNavigation(-60);
+  await setNavigation(24);
+  await page.locator('#navigationVolumeUp').click();await checkNavigation(24);
+  await setNavigation(0);
   await page.locator('#navigationVolumeUp').click();
   await page.locator('#navigationVolumeDown').click();
   await capture(page,`browser-navigation-buttons-${scenario.name}-font130.jpg`);

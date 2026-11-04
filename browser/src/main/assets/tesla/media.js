@@ -61,6 +61,7 @@ export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()
   }
   const volumeKeys = {music:'diplay-music-volume',navigation:'diplay-navigation-volume'};
   const audio = createBrowserAudio({send,onState:onAudio,onDiagnostic,
+    navigationGainDb:read('diplay-navigation-gain-db'),
     volumes:{music:read(volumeKeys.music),navigation:read(volumeKeys.navigation)}});
   const audioPreference = createAudioPreference({audio,storedValue:read('diplay-browser-audio'),
     save:value=>save('diplay-browser-audio',value)});
@@ -358,6 +359,11 @@ export function createMedia({video,canvas,getToken,onTransport=()=>{},onAudio=()
     },
     get mode() { return selectedMode; },
     get busy() { return busy; },
+    setNavigationGainDb(value) {
+      const db=audio.setNavigationGainDb(value);
+      save('diplay-navigation-gain-db',db);
+      return db;
+    },
     setAudioVolume(role,value) {
       const percent = audio.setVolume(role,value);
       if (percent !== null) save(volumeKeys[role],percent);
