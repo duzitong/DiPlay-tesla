@@ -100,6 +100,13 @@ accepted the request, not that the iPhone executed it. Receiver logs record whet
 the press and release were written to its event channel. Test with both the music
 app and navigation visible; these buttons do not adjust Bluetooth navigation volume
 or claim the browser's system media session.
+During CarPlay, the larger lower-left **Next** shortcut above the app-menu button sends
+the same media command without opening the virtual keys or changing the iPhone's
+foreground app. It follows the displayed picture when letterboxed and hides
+when disconnected or when the full virtual-key row is open. Extra spacing separates
+it from the app-menu button to reduce accidental presses.
+Large-font full, compact/high-density and Arabic RTL shortcut screenshots are in
+`docs/testing/tesla/next-track-shortcut-20261104/`.
 Whitelisted media/arrow keydown events are logged without intercepting them, so
 an in-car test can establish which steering-wheel events actually reach the page.
 

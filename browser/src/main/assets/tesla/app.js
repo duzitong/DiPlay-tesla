@@ -140,6 +140,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
   document.documentElement.dir = ar?'rtl':'ltr';
   document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
   $('menuButton').setAttribute('aria-label',t('menu'));$('menuButton').title=t('menu');
+  $('nextTrackButton').setAttribute('aria-label',t('next'));$('nextTrackButton').title=t('next');
   function rememberToken(value) { token=value; localStorage.setItem('diplay-token',value); sessionStorage.removeItem('diplay-token'); }
   let token = localStorage.getItem('diplay-token') || sessionStorage.getItem('diplay-token') || '';
   if (!/^[a-f0-9]{32}$/.test(token)) token='';
@@ -491,6 +492,7 @@ import {createClientDiagnostics} from './client-diagnostics.js';
       } catch (error) {
         diagnostics.record('stream-error',{errorName:error?.name||'Error'});
         statusAvailable=false; resetPicture('stream-error'); releaseTouches(); navigationVolume.unavailable();
+        refreshActionControls();
         if(current)updateDiagnostics({...current,connected:false});
         $('status').textContent = error.message || t('disconnected');
         $('pairError').textContent = error.message || t('disconnected');
@@ -498,14 +500,29 @@ import {createClientDiagnostics} from './client-diagnostics.js';
       }
     }
   }
-  function normalizedPoint(x,y) {
+  function pictureBounds() {
     const picture=renderer.surface;
     const box = picture.getBoundingClientRect(), native=media.displayed && media.mode!=='webcodecs',sourceWidth=native?video.videoWidth:canvas.width,sourceHeight=native?video.videoHeight:canvas.height;
     const scale = Math.min(box.width/sourceWidth,box.height/sourceHeight);
     const width = sourceWidth*scale, height = sourceHeight*scale;
     const left = box.left+(box.width-width)/2, top = box.top+(box.height-height)/2;
+    return {left,top,width,height};
+  }
+  function normalizedPoint(x,y) {
+    const {left,top,width,height}=pictureBounds();
     return { x:(x-left)/width, y:(y-top)/height };
   }
+  function refreshShortcutPosition() {
+    const {left,top,width,height}=pictureBounds();
+    if(!(width>0 && height>0))return;
+    const style=$('nextTrackShortcut').style;
+    style.setProperty('--picture-left',left+'px');
+    style.setProperty('--picture-width',width+'px');
+    style.setProperty('--picture-bottom',Math.max(0,document.documentElement.clientHeight-top-height)+'px');
+  }
+  window.addEventListener('resize',refreshShortcutPosition);
+  video.addEventListener('resize',refreshShortcutPosition);
+  new MutationObserver(refreshShortcutPosition).observe(canvas,{attributes:true,attributeFilter:['width','height']});
   function queueTouches() { touchSender.transition(Array.from(fingers.values())); }
   function releaseTouches() {
     fingers.clear();
@@ -557,21 +574,30 @@ import {createClientDiagnostics} from './client-diagnostics.js';
     video.addEventListener(name,()=>diagnostics.record('video-'+name));
   window.addEventListener('error',event=>diagnostics.record('script-error',{errorName:event.error?.name||'Error'}));
   window.addEventListener('unhandledrejection',event=>diagnostics.record('script-rejection',{errorName:event.reason?.name||'Error'}));
-  let actionPending=false;
+  let actionPending=false,shortcutFeedbackTimer;
   function refreshActionControls() {
-    document.querySelectorAll('[data-action]').forEach(button => { button.disabled = !current?.connected || actionPending; });
+    const connected=statusAvailable && current?.connected;
+    document.querySelectorAll('[data-action]').forEach(button => { button.disabled = !connected || actionPending; });
+    document.body.classList.toggle('carPlayConnected',Boolean(connected));
+    $('nextTrackShortcut').hidden=!connected;
+    if(connected)refreshShortcutPosition();
   }
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click',async() => {
     if(actionPending)return;
     actionPending=true;refreshActionControls();releaseTouches();
-    const feedback=$('mediaCommandStatus');
-    feedback.hidden=false;feedback.textContent=t('commandSubmitting').replace('{action}',button.textContent);
+    const shortcut=button.id==='nextTrackButton',feedback=$(shortcut?'shortcutCommandStatus':'mediaCommandStatus');
+    if(shortcut)clearTimeout(shortcutFeedbackTimer);
+    const label=button.getAttribute('aria-label')||button.textContent;
+    feedback.hidden=false;feedback.textContent=t('commandSubmitting').replace('{action}',label);
     try {
       await api('/api/action',{action:button.dataset.action});
-      feedback.textContent=t('commandSubmitted').replace('{action}',button.textContent);
+      feedback.textContent=t('commandSubmitted').replace('{action}',label);
     } catch(error) {
       feedback.textContent=t('commandFailed').replace('{error}',error.message);
-    } finally { actionPending=false;refreshActionControls(); }
+    } finally {
+      actionPending=false;refreshActionControls();
+      if(shortcut)shortcutFeedbackTimer=setTimeout(()=>{feedback.hidden=true;},5000);
+    }
   }));
   refreshActionControls();
   async function pair(code) {

@@ -24,7 +24,7 @@ await mkdir(output, {recursive:true});
 const initialDisplay = () => ({mode:'RIGHT',right:{width:1024,height:768},full:{width:1920,height:1080},fps:20,jpegFps:20,jpegQuality:75});
 let display = initialDisplay(), activeDisplay = initialDisplay(), touches = [], saves = [], actions = [], lateFrames = 0;
 const clientDiagnostics=[];
-let failNextStatus=false,failNextLogExport=false,audioRoute='browser';
+let failNextStatus=false,failNextLogExport=false,audioRoute='browser',iphoneConnected=true;
 let failNextAction=false,holdNextAction=null,releaseAction=null;
 const diagnosticReport='Browser diagnostic evidence\nCarPlay audio stats maxGapMs=502 dropped=0\n';
 const pixel = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==', 'base64');
@@ -45,7 +45,7 @@ const server = createServer(async (req,res) => {
     }
     if(url.pathname==='/api/status') {
       if(failNextStatus){failNextStatus=false;res.writeHead(503);res.end();return;}
-      return json({connected:true,audio:audioRoute,stage:'Synthetic browser verification',display,activeDisplay,
+      return json({connected:iphoneConnected,audio:audioRoute,stage:'Synthetic browser verification',display,activeDisplay,
         pendingReconnect:JSON.stringify(display)!==JSON.stringify(activeDisplay)});
     }
     if(url.pathname==='/api/display') {
@@ -422,6 +422,7 @@ async function verifyMediaControls(page,scenario) {
   await page.locator('#keysButton').scrollIntoViewIfNeeded();
   await page.locator('#keysButton').click();
   await page.locator('#virtualKeys').waitFor({state:'visible'});
+  assert.equal(await page.locator('#nextTrackButton').isVisible(),false);
   const submitted=()=>page.waitForFunction(()=>!document.querySelector('[data-action=resume]').disabled &&
     /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('mediaCommandStatus').textContent));
   let heldTimer;
@@ -434,13 +435,13 @@ async function verifyMediaControls(page,scenario) {
     await held;
     await page.waitForResponse(response=>response.url().endsWith('/api/status'));
     for(const action of ['resume','pause','previous','next'])
-      assert.equal(await page.locator(`[data-action=${action}]`).isDisabled(),true);
+      assert.equal(await page.locator(`#virtualKeys [data-action=${action}]`).isDisabled(),true);
     await page.locator('[data-action=pause]').evaluate(node=>node.click());
     assert.equal(actions.length,baseline.actions+1,'A pending command must not submit twice');
   } finally {clearTimeout(heldTimer);releaseAction?.();releaseAction=null;holdNextAction=null;}
   await submitted();
   for(const action of ['pause','previous','next']) {
-    await page.locator(`[data-action=${action}]`).click();
+    await page.locator(`#virtualKeys [data-action=${action}]`).click();
     await submitted();
   }
   assert.deepEqual(actions.slice(baseline.actions).map(value=>value.action),['resume','pause','previous','next']);
@@ -499,13 +500,75 @@ async function verifyMediaControls(page,scenario) {
     noAudioContextOrVideoRestart:true,largeFontBoundsAndRowHeights:true,
     guidanceButtons:{independentGain:true,sharedPersistence:true,bounds:true,noPhoneCommands:true,disabledForBluetooth:true}};
 }
+async function verifyNextTrackShortcut(page,scenario) {
+  const shortcut=page.locator('#nextTrackButton');
+  await shortcut.waitFor({state:'visible'});
+  const baseline={actions:actions.length,touches:touches.length,hellos:await page.evaluate(()=>__uiFixture.hellos.length),
+    contexts:await page.evaluate(()=>__uiFixture.audioContexts.length)};
+  assert.equal(await page.locator('#virtualKeys').isVisible(),false);
+  const bounds=await shortcut.boundingBox();
+  assert.ok(bounds.x>=0 && bounds.y>=0 && bounds.x+bounds.width<=scenario.width &&
+    bounds.y+bounds.height<=scenario.height,JSON.stringify(bounds));
+  assert.equal(bounds.width,bounds.height,'The shortcut keeps the shared control size');
+  assert.ok(bounds.width>=70,'The shortcut is larger than the standard control');
+  assert.ok(bounds.y+bounds.height<=scenario.height-80,'The app-menu area below the shortcut stays clear');
+  assert.equal(await shortcut.evaluate(node=>{
+    const box=node.getBoundingClientRect();
+    return Boolean(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2)?.closest('#nextTrackButton'));
+  }),true,'The reconnect notice and video must not cover the shortcut');
+  await capture(page,`browser-next-track-${scenario.name}-font130.jpg`);
+  const label=await shortcut.getAttribute('aria-label');
+  assert.ok(label);
+  let reachedTimer;
+  const reached=new Promise((resolve,reject)=>{
+    reachedTimer=setTimeout(()=>reject(new Error('Next-track shortcut did not reach the fixture')),15000);
+    holdNextAction=()=>{clearTimeout(reachedTimer);resolve();};
+  });
+  try {
+    await shortcut.click();
+    await reached;
+    await page.waitForResponse(response=>response.url().endsWith('/api/status'));
+    assert.equal(await shortcut.isDisabled(),true);
+    assert.equal(await page.locator('#virtualKeys [data-action=next]').isDisabled(),true);
+    await shortcut.evaluate(node=>node.click());
+    assert.equal(actions.length,baseline.actions+1,'One pending shortcut press sends one action');
+  } finally {clearTimeout(reachedTimer);releaseAction?.();releaseAction=null;holdNextAction=null;}
+  await page.waitForFunction(()=>!document.getElementById('nextTrackButton').disabled &&
+    /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('shortcutCommandStatus').textContent));
+  assert.ok((await page.locator('#shortcutCommandStatus').textContent()).includes(label));
+  failNextAction=true;
+  await shortcut.click();
+  await page.waitForFunction(()=>/指令失败|Command failed|فشل الأمر/.test(document.getElementById('shortcutCommandStatus').textContent));
+  assert.equal(await shortcut.isEnabled(),true);
+  audioRoute='bluetooth';
+  await page.waitForFunction(()=>document.getElementById('audioButton').disabled &&
+    __uiFixture.audioContexts.every(context=>context.state==='closed'));
+  await shortcut.focus();await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>!document.getElementById('nextTrackButton').disabled &&
+    /尚未确认|not confirmed|لم يتم تأكيد/.test(document.getElementById('shortcutCommandStatus').textContent));
+  assert.deepEqual(actions.slice(baseline.actions).map(value=>value.action),['next','next','next']);
+  assert.ok(touches.slice(baseline.touches).every(packet=>packet.contacts.length===0),
+    'Shortcut clicks must not forward presses into the CarPlay picture');
+  assert.equal(await page.evaluate(()=>__uiFixture.hellos.length),baseline.hellos);
+  assert.equal(await page.evaluate(()=>__uiFixture.audioContexts.length),baseline.contexts);
+  iphoneConnected=false;
+  await shortcut.waitFor({state:'hidden'});
+  assert.equal(await shortcut.isDisabled(),true);
+  await shortcut.evaluate(node=>node.click());
+  assert.equal(actions.length,baseline.actions+3);
+  iphoneConnected=true;
+  await shortcut.waitFor({state:'visible'});
+  audioRoute='browser';
+  return {visibleWithoutVirtualKeys:true,pendingSerialized:true,failureVisible:true,keyboard:true,
+    noForwardedTouch:true,noMediaRestart:true,worksWithBluetoothPolicy:true,hiddenWhenDisconnected:true,bounds};
+}
 try {
   const cases=[{name:'full-en',width:1920,height:1080,lang:'en'},
     {name:'compact-zh',width:1024,height:768,lang:'zh-CN',deviceScaleFactor:2},
     {name:'narrow-ar',width:360,height:740,lang:'ar'}];
   for(const scenario of cases) {
     console.log('Checking',scenario.name);
-    display=initialDisplay();activeDisplay=initialDisplay();touches=[];saves=[];actions=[];lateFrames=0;audioRoute='browser';
+    display=initialDisplay();activeDisplay=initialDisplay();touches=[];saves=[];actions=[];lateFrames=0;audioRoute='browser';iphoneConnected=true;
     const context=await browser.newContext({viewport:{width:scenario.width,height:scenario.height},locale:scenario.lang,
       deviceScaleFactor:scenario.deviceScaleFactor || 1});
     await context.addInitScript(installFixture,{cjk:Boolean(cjkFont)});
@@ -624,6 +687,7 @@ try {
     report.checks.at(-1).presentationChecks=presentationChecks;
     report.checks.at(-1).bluetoothAudio=await verifyBluetoothAudio(page,scenario);
     report.checks.at(-1).mediaControls=await verifyMediaControls(page,scenario);
+    report.checks.at(-1).nextTrackShortcut=await verifyNextTrackShortcut(page,scenario);
     assert.deepEqual(errors,[]);
     await context.close();
   }

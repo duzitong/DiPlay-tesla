@@ -76,6 +76,12 @@
       <button type="submit" class="primaryAction" data-i18n="connect">连接</button>
     </form>
   </main>
+  <aside id="nextTrackShortcut" class="carPlayShortcut" hidden>
+    <button id="nextTrackButton" class="nextTrackButton" type="button" data-action="next" aria-label="下一曲" title="下一曲" disabled>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4v16l11-8zM17 4h3v16h-3z"/></svg>
+    </button>
+    <p id="shortcutCommandStatus" role="status" aria-live="polite" hidden></p>
+  </aside>
   <footer id="virtualKeys" aria-label="CarPlay" hidden>
     <button data-action="home" data-i18n="home">主页</button>
     <button data-action="back" data-i18n="back">返回</button>
