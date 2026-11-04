@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayHidInputSemanticsTest {
+    @Test fun mediaControlsRemainGlobalWhileScreenInputsKeepTheirDisplayBinding() {
+        assertFalse(AirPlayHid.mediaHidDevice().containsKey("displayUUID"))
+        val display = "test-display"
+        val screenInputs = listOf(
+            AirPlayHid.touchHidDevice(1920, 1080, display),
+            AirPlayHid.knobHidDevice(display),
+            AirPlayHid.telephonyHidDevice(display),
+        )
+        screenInputs.forEach { assertEquals(display, it["displayUUID"]) }
+    }
+
     @Test fun touchscreenCoordinatesRemainAbsoluteSixteenBitValuesForBothContacts() {
         val device = AirPlayHid.touchHidDevice(1920, 1080, "test-display")
         val fields = inputFields(device["hidDescriptor"] as ByteArray).filter {

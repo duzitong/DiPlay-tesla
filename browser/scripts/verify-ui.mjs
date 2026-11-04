@@ -510,7 +510,7 @@ async function verifyNextTrackShortcut(page,scenario) {
   assert.ok(bounds.x>=0 && bounds.y>=0 && bounds.x+bounds.width<=scenario.width &&
     bounds.y+bounds.height<=scenario.height,JSON.stringify(bounds));
   assert.equal(bounds.width,bounds.height,'The shortcut keeps the shared control size');
-  assert.ok(bounds.width>=70,'The shortcut is larger than the standard control');
+  assert.ok(bounds.width>=44 && bounds.width<=56,'The shortcut matches app-icon sizing rather than an oversized control');
   assert.ok(bounds.y+bounds.height<=scenario.height-80,'The app-menu area below the shortcut stays clear');
   assert.equal(await shortcut.evaluate(node=>{
     const box=node.getBoundingClientRect();

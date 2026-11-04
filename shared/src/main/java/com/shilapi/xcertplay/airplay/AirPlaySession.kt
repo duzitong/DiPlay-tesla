@@ -960,7 +960,15 @@ class AirPlaySession(
                 val parsed = RtspMessage.parseMessages(plaintext)
                 plaintext = parsed.rest
                 for (message in parsed.messages) {
-                    if (message.method.startsWith("RTSP/") || message.method.startsWith("HTTP/")) continue
+                    if (message.method.startsWith("RTSP/") || message.method.startsWith("HTTP/")) {
+                        val status = message.path.toIntOrNull()
+                        if (status == null || status !in 200..299) {
+                            debugLog("airplay event rejected status=${message.path} cseq=${message.headers["cseq"] ?: "-"} body=${message.body.size}")
+                        } else {
+                            trace { "airplay event response status=$status cseq=${message.headers["cseq"] ?: "-"} body=${message.body.size}" }
+                        }
+                        continue
+                    }
                     debugLog(
                         "airplay event rx ${message.method} ${message.path} cseq=${message.headers["cseq"] ?: "-"} body=${message.body.size}",
                     )

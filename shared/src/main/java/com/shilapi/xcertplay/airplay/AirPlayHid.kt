@@ -22,7 +22,8 @@ data class AirPlayKnobState(
 object AirPlayHid {
     const val TOUCH_HID_UID = 0x2a2a2a2a
     const val KNOB_HID_UID = 0x2a2a2a2b
-    const val MEDIA_HID_UID = 0x2a2a2a2c
+    // Keep the global media device distinct from the old display-scoped registration.
+    const val MEDIA_HID_UID = 0x2a2a2a2e
     const val TELEPHONY_HID_UID = 0x2a2a2a2d
 
     internal const val TOUCH_CONTACTS = 2
@@ -34,8 +35,9 @@ object AirPlayHid {
     fun knobHidDevice(displayUuid: String): Map<String, Any?> =
         hidDeviceEntry(KNOB_HID_UID, "xcertplay Knob", knobDescriptor, displayUuid)
 
-    fun mediaHidDevice(displayUuid: String): Map<String, Any?> =
-        hidDeviceEntry(MEDIA_HID_UID, "xcertplay Media", mediaDescriptor, displayUuid)
+    // Playback controls must reach the phone's player, not the focused CarPlay display.
+    fun mediaHidDevice(): Map<String, Any?> =
+        hidDeviceEntry(MEDIA_HID_UID, "xcertplay Media", mediaDescriptor)
 
     fun telephonyHidDevice(displayUuid: String): Map<String, Any?> =
         hidDeviceEntry(TELEPHONY_HID_UID, "xcertplay Telephony", telephonyDescriptor, displayUuid)
@@ -75,16 +77,17 @@ object AirPlayHid {
         uid: Int,
         name: String,
         descriptor: ByteArray,
-        displayUuid: String,
+        displayUuid: String? = null,
     ): Map<String, Any?> = linkedMapOf(
         "hidProductID" to 1L,
         "hidVendorID" to 2L,
         "hidCountryCode" to 0L,
         "uuid" to uid.toString(16),
         "name" to name,
-        "displayUUID" to displayUuid,
         "hidDescriptor" to descriptor,
-    )
+    ).apply {
+        if (displayUuid != null) put("displayUUID", displayUuid)
+    }
 
     private fun multitouchDescriptor(xMax: Int, yMax: Int): ByteArray {
         val bytes = ArrayList<Int>()
